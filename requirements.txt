@@ -1,1 +1,4 @@
 pygooglenews
+google-genai
+python-dotenv
+trafilatura

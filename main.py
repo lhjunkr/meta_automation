@@ -1,5 +1,4 @@
 import os
-
 import requests
 import trafilatura
 from dotenv import load_dotenv
@@ -7,6 +6,10 @@ from google import genai
 from google.genai import types
 from googlenewsdecoder import gnewsdecoder
 from pygooglenews import GoogleNews
+from pathlib import Path
+from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
+from huggingface_hub import InferenceClient
 
 REQUEST_HEADERS = {
     "User-Agent": (
@@ -126,19 +129,24 @@ def select_best_articles(news_list):
 
 **Selection Logic:**
 - If multiple articles meet the criteria, select the one that is most "actionable" or "insightful" for business strategy.
-- Return only the selected article ID for each category.
+- Return exactly two selected article IDs for each category.
+- The first ID is the primary choice.
+- The second ID is the backup choice if the primary article fails during processing.
 - Do not return title, source, link, summary, or commentary.
-- You must select one ID from each category: 종합(KR), 경제(KR), 경제(US).
+- You must select two IDs from each category: 종합(KR), 경제(KR), 경제(US).
 
 **Output Format (Strictly for machine parsing):**
 Category: [Category Name]
-Selected ID: [Article ID]
+Primary ID: [Article ID]
+Backup ID: [Article ID]
 
 Category: [Category Name]
-Selected ID: [Article ID]
+Primary ID: [Article ID]
+Backup ID: [Article ID]
 
 Category: [Category Name]
-Selected ID: [Article ID]
+Primary ID: [Article ID]
+Backup ID: [Article ID]
 
 ---
 **News List to Analyze:**
@@ -154,8 +162,7 @@ Selected ID: [Article ID]
 
     return response.text.strip()
 
-
-# Step 4-1. Gemini가 반환한 Selected ID를 파싱합니다.
+# Step 4-1. Gemini가 반환한 Primary ID와 Backup ID를 파싱합니다.
 def parse_selected_ids(selected_result):
     selected_items = []
     current_item = {}
@@ -169,17 +176,20 @@ def parse_selected_ids(selected_result):
                 current_item = {}
             current_item["category"] = line.replace("Category:", "").strip()
 
-        elif line.startswith("Selected ID:"):
-            selected_id_text = line.replace("Selected ID:", "").strip()
-            current_item["selected_id"] = int(selected_id_text)
+        elif line.startswith("Primary ID:"):
+            primary_id_text = line.replace("Primary ID:", "").strip()
+            current_item["primary_id"] = int(primary_id_text)
+
+        elif line.startswith("Backup ID:"):
+            backup_id_text = line.replace("Backup ID:", "").strip()
+            current_item["backup_id"] = int(backup_id_text)
 
     if current_item:
         selected_items.append(current_item)
 
     return selected_items
 
-
-# Step 4-2. Selected ID로 원본 기사 데이터를 찾습니다.
+# Step 4-2. Primary/Backup ID로 원본 기사 데이터를 찾습니다.
 def match_selected_articles(selected_result, news_list):
     selected_items = parse_selected_ids(selected_result)
     news_by_id = {news["id"]: news for news in news_list}
@@ -187,17 +197,28 @@ def match_selected_articles(selected_result, news_list):
     selected_articles = []
 
     for item in selected_items:
-        selected_id = item["selected_id"]
-        article = news_by_id.get(selected_id)
+        category = item["category"]
 
-        if not article:
-            print(f"선택된 ID를 찾을 수 없습니다: {selected_id}")
-            continue
+        primary_article = news_by_id.get(item.get("primary_id"))
+        backup_article = news_by_id.get(item.get("backup_id"))
 
-        selected_articles.append(article)
+        if primary_article:
+            primary_article = primary_article.copy()
+            primary_article["selection_rank"] = "primary"
+            primary_article["backup_article"] = backup_article.copy() if backup_article else None
+            selected_articles.append(primary_article)
+        else:
+            print(f"1순위 ID를 찾을 수 없습니다: {item.get('primary_id')}")
+
+            if backup_article:
+                backup_article = backup_article.copy()
+                backup_article["selection_rank"] = "backup"
+                backup_article["backup_article"] = None
+                selected_articles.append(backup_article)
+            else:
+                print(f"2순위 ID도 찾을 수 없습니다: {category}")
 
     return selected_articles
-
 
 # Step 5-1. Google News 암호화 링크를 실제 언론사 URL로 변환합니다.
 def resolve_article_url(google_link):
@@ -275,67 +296,42 @@ def fetch_selected_article_bodies(selected_articles):
 
     return selected_articles
 
-
-# Step 7-1. 인스타 캡션과 Flux 이미지 프롬프트 생성을 위한 Gemini 프롬프트를 만듭니다.
-def build_instagram_prompt(article):
+# Step 7-1. 인스타 캡션 생성을 위한 Gemini 프롬프트를 만듭니다.
+def build_instagram_caption_prompt(article):
     return f"""[Persona]
-You are a top-tier Instagram News Curator and Visual Director. Your mission is to transform raw news into a viral, professional Instagram post. You think like a human editor—friendly, trendy, and factual.
+You are a professional Instagram News Curator. Your goal is to rewrite complex news into a viral, human-centric post.
 
 [Input Data]
 - Title: {article['title']}
 - Source: {article['source']}
 - Body: {article['body']}
 
-[Task 1: Instagram Caption (KOREAN ONLY)]
-Write a high-engagement Instagram caption in KOREAN based on the input data.
-1. Headline: Start with "[속보🚨]" followed by a punchy headline.
+[Task: Instagram Caption (KOREAN ONLY)]
+Write a high-engagement Instagram caption based on the input data.
+1. Headline: Start with "[속보🚨]" followed by a punchy, click-worthy headline.
 2. Hook: A catchy opening sentence to stop the scroll.
-3. Summary: 3 clear bullet points using 📍 or ✅. (Facts only, no hallucinations).
-4. Context: A friendly explanation of why this news matters.
-5. Tone: NEVER use AI-typical phrases like "결론적으로", "요약하자면", "따라서", "알아보겠습니다". Use natural K-Instagram endings like "~하네요!", "~입니다", or "대박이죠?".
-6. Source: Write "출처: {article['source']}" at the end.
+3. Summary: 3 clear, punchy bullet points using 📍 or ✅. (Facts only, no hallucinations).
+4. Context: A friendly explanation of why this news is important to the reader.
+5. Tone: Use natural K-Instagram endings like "~하네요!", "~입니다", or "대박이죠?". Strictly avoid "AI-ish" connectors like "따라서", "결론적으로".
+6. Source: "출처: {article['source']}"
 7. Hashtags: Exactly 4 relevant hashtags.
 
-[Task 2: Flux.1 Image Prompt (ENGLISH ONLY)]
-Create a professional image generation prompt for Flux.1 to create a symbolic editorial visual for the news topic.
-1. Style: Photojournalism, editorial photography, candid shot, shot on 35mm lens, high-fidelity, raw photo textures.
-2. Composition: 4:5 Portrait aspect ratio. Ensure the main subject is in the upper 3/4 of the frame.
-3. Negative Space: Include "significant negative space at the bottom 1/4 of the frame".
-4. Mandatory Gradient: Explicitly state "Apply a soft, dark vertical gradient fade to black at the bottom 1/4 of the image for text legibility".
-5. Local Context: If the news is Korean, describe a "Modern Seoul background" or "Korean context".
-6. Constraints: No text in the image. No artificial glow. No over-saturation.
-7. Safety: Do not depict identifiable real people or recreate exact faces. Use symbolic or generic subjects when needed.
-8. Interpretation: Represent the topic visually without claiming to show the actual event.
-
 [Output Format]
-===PART 1: CAPTION===
-(Your Korean Caption here)
-
-===PART 2: IMAGE_PROMPT===
-(Your English Flux Prompt here)"""
+===KOREAN_CAPTION===
+(Your caption here)"""
 
 
-# Step 7-2. Gemini 응답에서 캡션과 Flux 프롬프트를 분리합니다.
-def parse_instagram_generation(raw_text):
-    caption = ""
-    image_prompt = ""
+def parse_instagram_caption(raw_text):
+    marker = "===KOREAN_CAPTION==="
 
-    caption_marker = "===PART 1: CAPTION==="
-    image_marker = "===PART 2: IMAGE_PROMPT==="
+    if marker in raw_text:
+        return raw_text.split(marker, 1)[1].strip()
 
-    if caption_marker in raw_text and image_marker in raw_text:
-        caption_part = raw_text.split(caption_marker, 1)[1]
-        caption, image_prompt = caption_part.split(image_marker, 1)
-        caption = caption.strip()
-        image_prompt = image_prompt.strip()
-    else:
-        caption = raw_text.strip()
-
-    return caption, image_prompt
+    return raw_text.strip()
 
 
-# Step 7-3. 기사 1개에 대해 인스타 캡션과 Flux 프롬프트를 생성합니다.
-def generate_instagram_post(article):
+# Step 7-2. 기사 1개에 대해 인스타 캡션을 생성합니다.
+def generate_instagram_caption(article):
     load_dotenv()
 
     api_key = os.getenv("GEMINI_API_KEY")
@@ -343,41 +339,406 @@ def generate_instagram_post(article):
         raise RuntimeError(".env 파일에 GEMINI_API_KEY를 먼저 입력하세요.")
 
     if article.get("status") != "success" or not article.get("body"):
-        article["instagram_post_raw"] = ""
+        article["instagram_caption_raw"] = ""
         article["instagram_caption"] = ""
-        article["flux_prompt"] = ""
-        article["instagram_post_status"] = "skipped_no_body"
+        article["instagram_caption_status"] = "skipped_no_body"
         return article
 
     client = genai.Client(api_key=api_key)
 
     response = client.models.generate_content(
         model="gemini-2.5-flash-lite",
-        contents=build_instagram_prompt(article),
+        contents=build_instagram_caption_prompt(article),
         config=types.GenerateContentConfig(temperature=0.7),
     )
 
     raw_text = response.text.strip()
-    caption, image_prompt = parse_instagram_generation(raw_text)
 
-    article["instagram_post_raw"] = raw_text
-    article["instagram_caption"] = caption
-    article["flux_prompt"] = image_prompt
-    article["instagram_post_status"] = "success"
+    article["instagram_caption_raw"] = raw_text
+    article["instagram_caption"] = parse_instagram_caption(raw_text)
+    article["instagram_caption_status"] = "success"
 
     return article
 
 
-# Step 7-4. 선택된 3개 기사에 대해 인스타 콘텐츠를 생성합니다.
-def generate_instagram_posts(selected_articles):
+# Step 7-3. 선택된 기사들에 대해 인스타 캡션을 생성합니다.
+def generate_instagram_captions(selected_articles):
     for article in selected_articles:
-        print(f"인스타 게시물 생성 중: {article['title'][:30]}...")
-        generate_instagram_post(article)
+        print(f"인스타 캡션 생성 중: {article['title'][:30]}...")
+        generate_instagram_caption(article)
 
     return selected_articles
 
 
-# Step 8-1. 선택된 기사 메타데이터를 저장합니다.
+def save_instagram_captions(selected_articles):
+    with open("instagram_captions.txt", "w", encoding="utf-8") as f:
+        for article in selected_articles:
+            f.write(f"ID: {article['id']}\n")
+            f.write(f"Category: {article['category']}\n")
+            f.write(f"Title: {article['title']}\n")
+            f.write(f"Source: {article['source']}\n")
+            f.write(f"Status: {article.get('instagram_caption_status', '')}\n")
+            f.write("Instagram Caption:\n")
+            f.write(article.get("instagram_caption", ""))
+            f.write("\n\n---\n\n")
+
+
+# Step 8-1. 인스타 캡션을 기반으로 SDXL 이미지 프롬프트를 만듭니다.
+def build_sdxl_image_prompt(article):
+    step1_output = article.get("instagram_caption", "")
+
+    return f"""[Persona]
+You are a Visual Director specializing in photojournalism. You transform text-based news summaries into highly optimized keyword-based prompts for Stable Diffusion XL (SDXL).
+
+[Input Data]
+- Generated Caption: {step1_output}
+
+[Task: SDXL Image Prompt (ENGLISH ONLY, KEYWORD FORMAT)]
+Analyze the caption and create a symbolic editorial visual prompt. You MUST output a comma-separated list of keywords, NOT full sentences.
+
+1. Core Concept: Extract the most striking visual element (e.g., "A solitary figure in a dark office", "A glowing stock market chart").
+2. Format Rules: Use this exact structure -> [Core Concept], [Style], [Composition], [Lighting/Atmosphere].
+3. Style Keywords: Photojournalism, editorial photography, candid shot, shot on 35mm lens, 8k resolution, highly detailed, photorealistic.
+4. Composition & Layout (CRITICAL):
+   - Include keywords: "vertical portrait", "main subject in upper half".
+   - Include keywords for text space: "dark negative space at bottom", "soft black gradient at bottom edge", "vignette".
+5. Local Context: Add "Seoul street" or "Korean context" ONLY if relevant.
+6. Constraints: Include "no text", "no watermarks" in the prompt. Do not depict identifiable real people. Use symbolic subjects.
+
+[Output Format]
+===IMAGE_PROMPT===
+(Provide only the comma-separated English keywords here)"""
+
+
+def parse_sdxl_image_prompt(raw_text):
+    marker = "===IMAGE_PROMPT==="
+
+    if marker in raw_text:
+        return raw_text.split(marker, 1)[1].strip()
+
+    return raw_text.strip()
+
+
+# Step 8-2. 기사 1개에 대해 SDXL 이미지 프롬프트를 생성합니다.
+def generate_sdxl_image_prompt(article):
+    load_dotenv()
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError(".env 파일에 GEMINI_API_KEY를 먼저 입력하세요.")
+
+    if not article.get("instagram_caption"):
+        article["sdxl_image_prompt_raw"] = ""
+        article["sdxl_image_prompt"] = ""
+        article["sdxl_image_prompt_status"] = "skipped_no_caption"
+        return article
+
+    client = genai.Client(api_key=api_key)
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash-lite",
+        contents=build_sdxl_image_prompt(article),
+        config=types.GenerateContentConfig(temperature=0.7),
+    )
+
+    raw_text = response.text.strip()
+
+    article["sdxl_image_prompt_raw"] = raw_text
+    article["sdxl_image_prompt"] = parse_sdxl_image_prompt(raw_text)
+    article["sdxl_image_prompt_status"] = "success"
+
+    return article
+
+
+# Step 8-3. 선택된 기사들에 대해 SDXL 이미지 프롬프트를 생성합니다.
+def generate_sdxl_image_prompts(selected_articles):
+    for article in selected_articles:
+        print(f"SDXL 이미지 프롬프트 생성 중: {article['title'][:30]}...")
+        generate_sdxl_image_prompt(article)
+
+    return selected_articles
+
+
+def save_sdxl_image_prompts(selected_articles):
+    with open("sdxl_image_prompts.txt", "w", encoding="utf-8") as f:
+        for article in selected_articles:
+            f.write(f"ID: {article['id']}\n")
+            f.write(f"Category: {article['category']}\n")
+            f.write(f"Title: {article['title']}\n")
+            f.write(f"Source: {article['source']}\n")
+            f.write(f"Status: {article.get('sdxl_image_prompt_status', '')}\n")
+            f.write("SDXL Image Prompt:\n")
+            f.write(article.get("sdxl_image_prompt", ""))
+            f.write("\n\n---\n\n")
+
+
+# Step 9-1. SDXL 이미지 프롬프트를 기반으로 Hugging Face에서 이미지를 생성합니다.
+def generate_huggingface_image(article):
+    load_dotenv()
+
+    hf_token = os.getenv("HF_TOKEN")
+    if not hf_token:
+        raise RuntimeError(".env 파일에 HF_TOKEN을 먼저 입력하세요.")
+
+    if not article.get("sdxl_image_prompt"):
+        article["image_path"] = ""
+        article["image_generation_status"] = "skipped_no_sdxl_prompt"
+        return article
+
+    output_dir = Path("generated_images")
+    output_dir.mkdir(exist_ok=True)
+
+    image_path = output_dir / f"article_{article['id']}.png"
+
+    client = InferenceClient(token=hf_token)
+
+    image = client.text_to_image(
+        prompt=article["sdxl_image_prompt"],
+        negative_prompt=(
+            "text, watermark, logo, low quality, blurry, distorted face, "
+            "extra fingers, oversaturated, artificial glow"
+        ),
+        model="stabilityai/stable-diffusion-xl-base-1.0",
+        width=1024,
+        height=1280,
+        num_inference_steps=30,
+        guidance_scale=7.5,
+    )
+
+    image.save(image_path)
+
+    article["image_path"] = str(image_path)
+    article["image_generation_status"] = "success"
+
+    return article
+
+
+# Step 9-2. 선택된 기사들에 대해 Hugging Face 이미지를 생성합니다.
+def generate_huggingface_images(selected_articles):
+    for article in selected_articles:
+        print(f"Hugging Face 이미지 생성 중: {article['title'][:30]}...")
+        generate_huggingface_image(article)
+
+    return selected_articles
+
+
+# Step 9-3. 생성된 이미지 하단에 그라데이션과 기사 텍스트를 합성합니다.
+def load_korean_font(size):
+    font_path = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+    fallback_path = "/System/Library/Fonts/Supplemental/AppleGothic.ttf"
+
+    try:
+        return ImageFont.truetype(font_path, size=size)
+    except OSError:
+        return ImageFont.truetype(fallback_path, size=size)
+
+
+def apply_bottom_gradient(image):
+    image = image.convert("RGBA")
+    width, height = image.size
+    gradient = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    gradient_pixels = gradient.load()
+    start_y = int(height * 0.68)
+
+    for y in range(start_y, height):
+        progress = (y - start_y) / max(height - start_y, 1)
+        alpha = int(235 * progress)
+        for x in range(width):
+            gradient_pixels[x, y] = (0, 0, 0, alpha)
+
+    return Image.alpha_composite(image, gradient)
+
+
+def text_width(draw, text, font):
+    bbox = draw.textbbox((0, 0), text, font=font)
+    return bbox[2] - bbox[0]
+
+
+def wrap_text(draw, text, font, max_width, max_lines=2):
+    words = text.split()
+    lines = []
+    current = ""
+
+    for word in words:
+        candidate = word if not current else f"{current} {word}"
+        if text_width(draw, candidate, font) <= max_width:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = word
+
+        if len(lines) >= max_lines:
+            break
+
+    if current and len(lines) < max_lines:
+        lines.append(current)
+
+    if len(lines) == max_lines:
+        remaining_text = " ".join(words)
+        joined = " ".join(lines)
+        if len(joined) < len(remaining_text):
+            while lines[-1] and text_width(draw, lines[-1] + "...", font) > max_width:
+                lines[-1] = lines[-1][:-1].rstrip()
+            lines[-1] = lines[-1] + "..."
+
+    return lines
+
+
+def clean_article_title(title):
+    if " - " in title:
+        return title.rsplit(" - ", 1)[0]
+    return title
+
+
+def render_news_image_overlay(article):
+    image_path = article.get("image_path")
+    if not image_path:
+        article["final_image_path"] = ""
+        article["image_overlay_status"] = "skipped_no_image"
+        return article
+
+    input_path = Path(image_path)
+    if not input_path.exists():
+        article["final_image_path"] = ""
+        article["image_overlay_status"] = "image_file_missing"
+        return article
+
+    image = Image.open(input_path)
+    image = apply_bottom_gradient(image)
+    draw = ImageDraw.Draw(image)
+
+    label_font = load_korean_font(45)
+    title_font = load_korean_font(55)
+    footer_font = load_korean_font(35)
+
+    x = 62
+    label_y = 1050
+    title_y = 1120
+    footer_y = 1250
+    max_width = image.size[0] - (x * 2)
+
+    label = "[속보]"
+    title = clean_article_title(article.get("title", ""))
+    footer = f"출처: {article.get('source', '')} | {datetime.now().strftime('%Y.%m.%d')}"
+
+    draw.text((x, label_y), label, fill="#FFFFFF", font=label_font)
+
+    title_lines = wrap_text(draw, title, title_font, max_width=max_width, max_lines=2)
+    for idx, line in enumerate(title_lines):
+        draw.text((x, title_y + (idx * 70)), line, fill="#FFFFFF", font=title_font)
+
+    draw.text((x, footer_y), footer, fill=(221, 221, 221, 215), font=footer_font)
+
+    final_path = input_path.with_name(f"{input_path.stem}_final{input_path.suffix}")
+    image.convert("RGB").save(final_path, quality=95)
+
+    article["final_image_path"] = str(final_path)
+    article["image_overlay_status"] = "success"
+    return article
+
+
+def render_news_image_overlays(selected_articles):
+    for article in selected_articles:
+        print(f"이미지 텍스트 합성 중: {article['title'][:30]}...")
+        render_news_image_overlay(article)
+
+    return selected_articles
+
+def is_article_complete(article):
+    return (
+        article.get("status") == "success"
+        and article.get("instagram_caption_status") == "success"
+        and article.get("sdxl_image_prompt_status") == "success"
+        and article.get("image_generation_status") == "success"
+        and article.get("image_overlay_status") == "success"
+        and bool(article.get("final_image_path"))
+    )
+
+
+def process_content_pipeline(selected_articles):
+    selected_articles = resolve_selected_article_links(selected_articles)
+    selected_articles = fetch_selected_article_bodies(selected_articles)
+
+    selected_articles = generate_instagram_captions(selected_articles)
+    save_instagram_captions(selected_articles)
+
+    selected_articles = generate_sdxl_image_prompts(selected_articles)
+    save_sdxl_image_prompts(selected_articles)
+
+    selected_articles = generate_huggingface_images(selected_articles)
+    selected_articles = render_news_image_overlays(selected_articles)
+    save_generated_images(selected_articles)
+
+    return selected_articles
+
+def retry_failed_categories_with_backup(selected_articles):
+    final_articles = []
+    failed_categories = []
+
+    for article in selected_articles:
+        if is_article_complete(article):
+            final_articles.append(article)
+            continue
+
+        backup_article = article.get("backup_article")
+
+        if not backup_article:
+            failed_categories.append(
+                {
+                    "category": article.get("category", ""),
+                    "primary_id": article.get("id", ""),
+                    "backup_id": "",
+                    "reason": "primary_failed_no_backup",
+                }
+            )
+            continue
+
+        print(f"1순위 실패, 2순위 기사로 재시도: {article['category']}")
+
+        backup_article["selection_rank"] = "backup"
+        backup_article["backup_article"] = None
+
+        processed_backup = process_content_pipeline([backup_article])[0]
+
+        if is_article_complete(processed_backup):
+            final_articles.append(processed_backup)
+        else:
+            failed_categories.append(
+                {
+                    "category": article.get("category", ""),
+                    "primary_id": article.get("id", ""),
+                    "backup_id": backup_article.get("id", ""),
+                    "reason": "primary_and_backup_failed",
+                }
+            )
+
+    save_failed_categories(failed_categories)
+
+    return final_articles
+
+def save_failed_categories(failed_categories):
+    with open("failed_categories.txt", "w", encoding="utf-8") as f:
+        for item in failed_categories:
+            f.write(f"Category: {item['category']}\n")
+            f.write(f"Primary ID: {item['primary_id']}\n")
+            f.write(f"Backup ID: {item['backup_id']}\n")
+            f.write(f"Reason: {item['reason']}\n")
+            f.write("\n---\n\n")
+
+def save_generated_images(selected_articles):
+    with open("generated_images.txt", "w", encoding="utf-8") as f:
+        for article in selected_articles:
+            f.write(f"ID: {article['id']}\n")
+            f.write(f"Category: {article['category']}\n")
+            f.write(f"Title: {article['title']}\n")
+            f.write(f"Status: {article.get('image_generation_status', '')}\n")
+            f.write(f"Image Path: {article.get('image_path', '')}\n")
+            f.write(f"Final Image Path: {article.get('final_image_path', '')}\n")
+            f.write(f"Overlay Status: {article.get('image_overlay_status', '')}\n")
+            f.write("\n---\n\n")
+
+# Step 9-1. 선택된 기사 메타데이터를 저장합니다.
 def save_selected_news(selected_articles):
     with open("selected_news.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
@@ -388,11 +749,11 @@ def save_selected_news(selected_articles):
             f.write(f"Google Link: {article['google_link']}\n")
             f.write(f"Resolved Link: {article.get('resolved_link', '')}\n")
             f.write(f"Status: {article.get('status', '')}\n")
-            f.write(f"Instagram Post Status: {article.get('instagram_post_status', '')}\n")
+            f.write(f"Instagram Caption Status: {article.get('instagram_caption_status', '')}\n")
             f.write("\n---\n\n")
 
 
-# Step 8-2. 본문, 인스타 캡션, Flux 프롬프트까지 저장합니다.
+# Step 9-2. 본문, 인스타 캡션, SDXL 이미지 프롬프트까지 저장합니다.
 def save_selected_articles(selected_articles):
     with open("selected_articles.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
@@ -403,17 +764,20 @@ def save_selected_articles(selected_articles):
             f.write(f"Google Link: {article['google_link']}\n")
             f.write(f"Resolved Link: {article.get('resolved_link', '')}\n")
             f.write(f"Status: {article.get('status', '')}\n")
-            f.write(f"Instagram Post Status: {article.get('instagram_post_status', '')}\n")
+            f.write(f"Instagram Caption Status: {article.get('instagram_caption_status', '')}\n")
             f.write("Body:\n")
             f.write(article.get("body", ""))
             f.write("\n\nInstagram Caption:\n")
             f.write(article.get("instagram_caption", ""))
-            f.write("\n\nFlux Prompt:\n")
-            f.write(article.get("flux_prompt", ""))
+            f.write("\n\nSDXL Image Prompt:\n")
+            f.write(article.get("sdxl_image_prompt", ""))
+            f.write("\n\nGenerated Image Path:\n")
+            f.write(article.get("image_path", ""))
+            f.write("\n\nFinal Image Path:\n")
+            f.write(article.get("final_image_path", ""))
             f.write("\n\n---\n\n")
 
-
-# Step 9. 전체 파이프라인을 실행합니다.
+# Step 10. 전체 파이프라인을 실행합니다.
 if __name__ == "__main__":
     news_list = fetch_top_news()
 
@@ -431,12 +795,13 @@ if __name__ == "__main__":
             f.write(selected_result)
 
         selected_articles = match_selected_articles(selected_result, news_list)
-        selected_articles = resolve_selected_article_links(selected_articles)
-        selected_articles = fetch_selected_article_bodies(selected_articles)
-        selected_articles = generate_instagram_posts(selected_articles)
+
+        selected_articles = process_content_pipeline(selected_articles)
+        selected_articles = retry_failed_categories_with_backup(selected_articles)
 
         save_selected_news(selected_articles)
         save_selected_articles(selected_articles)
+
 
         with open("history.txt", "w", encoding="utf-8") as f:
             f.write(news_list[0]["google_link"] + "\n")

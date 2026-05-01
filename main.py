@@ -1,6 +1,8 @@
 import os
 import requests
 import trafilatura
+import json
+import shutil
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -20,20 +22,49 @@ REQUEST_HEADERS = {
     "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
+def create_run_dir():
+    today = datetime.now().strftime("%Y-%m-%d")
+    run_dir = Path("outputs") / today
+    image_dir = run_dir / "images"
+
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    return run_dir
+
+# history.jsonl에서 이미 사용한 기사 링크를 읽어옵니다.
+def load_seen_links():
+    seen_links = set()
+    history_path = Path("history.jsonl")
+
+    if not history_path.exists():
+        print("기록된 뉴스가 없습니다.")
+        return seen_links
+
+    with open(history_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+
+            if not line:
+                continue
+
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            google_link = record.get("google_link")
+            if google_link:
+                seen_links.add(google_link)
+
+    print(f"기록된 뉴스 {len(seen_links)}건을 블랙리스트에 선탑재했습니다.")
+    return seen_links
 
 # Step 1. Google News에서 카테고리별 후보 기사 30개를 수집합니다.
 def fetch_top_news():
     print("[Step 1] 글로벌 구글 뉴스 데이터 수집...")
-
-    seen_links = set()
-
-    if os.path.exists("history.txt"):
-        with open("history.txt", "r", encoding="utf-8") as f:
-            seen_links.update(line.strip() for line in f.readlines())
-        print(f"기록된 뉴스 {len(seen_links)}건을 블랙리스트에 선탑재했습니다.")
-    else:
-        print("기록된 뉴스가 없습니다.")
-
+    
+    seen_links = load_seen_links()
+    
     gn_kr = GoogleNews(lang="ko", country="KR")
     gn_us = GoogleNews(lang="en", country="US")
     raw_news = []
@@ -370,8 +401,8 @@ def generate_instagram_captions(selected_articles):
     return selected_articles
 
 
-def save_instagram_captions(selected_articles):
-    with open("instagram_captions.txt", "w", encoding="utf-8") as f:
+def save_instagram_captions(selected_articles, run_dir):
+    with open(run_dir / "instagram_captions.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
             f.write(f"ID: {article['id']}\n")
             f.write(f"Category: {article['category']}\n")
@@ -459,8 +490,8 @@ def generate_sdxl_image_prompts(selected_articles):
     return selected_articles
 
 
-def save_sdxl_image_prompts(selected_articles):
-    with open("sdxl_image_prompts.txt", "w", encoding="utf-8") as f:
+def save_sdxl_image_prompts(selected_articles, run_dir):
+    with open(run_dir / "sdxl_image_prompts.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
             f.write(f"ID: {article['id']}\n")
             f.write(f"Category: {article['category']}\n")
@@ -473,7 +504,7 @@ def save_sdxl_image_prompts(selected_articles):
 
 
 # Step 9-1. SDXL 이미지 프롬프트를 기반으로 Hugging Face에서 이미지를 생성합니다.
-def generate_huggingface_image(article):
+def generate_huggingface_image(article, run_dir):
     load_dotenv()
 
     hf_token = os.getenv("HF_TOKEN")
@@ -485,9 +516,8 @@ def generate_huggingface_image(article):
         article["image_generation_status"] = "skipped_no_sdxl_prompt"
         return article
 
-    output_dir = Path("generated_images")
-    output_dir.mkdir(exist_ok=True)
-
+    output_dir = run_dir / "images"
+    output_dir.mkdir(parents=True, exist_ok=True)
     image_path = output_dir / f"article_{article['id']}.png"
 
     client = InferenceClient(token=hf_token)
@@ -514,13 +544,12 @@ def generate_huggingface_image(article):
 
 
 # Step 9-2. 선택된 기사들에 대해 Hugging Face 이미지를 생성합니다.
-def generate_huggingface_images(selected_articles):
+def generate_huggingface_images(selected_articles, run_dir):
     for article in selected_articles:
         print(f"Hugging Face 이미지 생성 중: {article['title'][:30]}...")
-        generate_huggingface_image(article)
+        generate_huggingface_image(article, run_dir)
 
     return selected_articles
-
 
 # Step 9-3. 생성된 이미지 하단에 그라데이션과 기사 텍스트를 합성합니다.
 def load_korean_font(size):
@@ -590,6 +619,15 @@ def clean_article_title(title):
         return title.rsplit(" - ", 1)[0]
     return title
 
+def extract_poster_title(article):
+    caption = article.get("instagram_caption", "")
+
+    for line in caption.splitlines():
+        line = line.strip()
+        if line:
+            return line
+
+    return clean_article_title(article.get("title", ""))
 
 def render_news_image_overlay(article):
     image_path = article.get("image_path")
@@ -612,14 +650,14 @@ def render_news_image_overlay(article):
     title_font = load_korean_font(55)
     footer_font = load_korean_font(35)
 
-    x = 62
+    x = 75
     label_y = 1050
     title_y = 1120
     footer_y = 1250
     max_width = image.size[0] - (x * 2)
 
     label = "[속보]"
-    title = clean_article_title(article.get("title", ""))
+    title = extract_poster_title(article)
     footer = f"출처: {article.get('source', '')} | {datetime.now().strftime('%Y.%m.%d')}"
 
     draw.text((x, label_y), label, fill="#FFFFFF", font=label_font)
@@ -656,23 +694,23 @@ def is_article_complete(article):
     )
 
 
-def process_content_pipeline(selected_articles):
+def process_content_pipeline(selected_articles, run_dir):
     selected_articles = resolve_selected_article_links(selected_articles)
     selected_articles = fetch_selected_article_bodies(selected_articles)
 
     selected_articles = generate_instagram_captions(selected_articles)
-    save_instagram_captions(selected_articles)
+    save_instagram_captions(selected_articles, run_dir)
 
     selected_articles = generate_sdxl_image_prompts(selected_articles)
-    save_sdxl_image_prompts(selected_articles)
+    save_sdxl_image_prompts(selected_articles, run_dir)
 
-    selected_articles = generate_huggingface_images(selected_articles)
+    selected_articles = generate_huggingface_images(selected_articles, run_dir)
     selected_articles = render_news_image_overlays(selected_articles)
-    save_generated_images(selected_articles)
+    save_generated_images(selected_articles, run_dir)
 
     return selected_articles
 
-def retry_failed_categories_with_backup(selected_articles):
+def retry_failed_categories_with_backup(selected_articles, run_dir):
     final_articles = []
     failed_categories = []
 
@@ -699,7 +737,7 @@ def retry_failed_categories_with_backup(selected_articles):
         backup_article["selection_rank"] = "backup"
         backup_article["backup_article"] = None
 
-        processed_backup = process_content_pipeline([backup_article])[0]
+        processed_backup = process_content_pipeline([backup_article], run_dir)[0]
 
         if is_article_complete(processed_backup):
             final_articles.append(processed_backup)
@@ -713,12 +751,12 @@ def retry_failed_categories_with_backup(selected_articles):
                 }
             )
 
-    save_failed_categories(failed_categories)
+    save_failed_categories(failed_categories, run_dir)
 
     return final_articles
 
-def save_failed_categories(failed_categories):
-    with open("failed_categories.txt", "w", encoding="utf-8") as f:
+def save_failed_categories(failed_categories, run_dir):
+    with open(run_dir / "failed_categories.txt", "w", encoding="utf-8") as f:
         for item in failed_categories:
             f.write(f"Category: {item['category']}\n")
             f.write(f"Primary ID: {item['primary_id']}\n")
@@ -726,8 +764,8 @@ def save_failed_categories(failed_categories):
             f.write(f"Reason: {item['reason']}\n")
             f.write("\n---\n\n")
 
-def save_generated_images(selected_articles):
-    with open("generated_images.txt", "w", encoding="utf-8") as f:
+def save_generated_images(selected_articles, run_dir):
+    with open(run_dir / "generated_images.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
             f.write(f"ID: {article['id']}\n")
             f.write(f"Category: {article['category']}\n")
@@ -739,8 +777,8 @@ def save_generated_images(selected_articles):
             f.write("\n---\n\n")
 
 # Step 9-1. 선택된 기사 메타데이터를 저장합니다.
-def save_selected_news(selected_articles):
-    with open("selected_news.txt", "w", encoding="utf-8") as f:
+def save_selected_news(selected_articles, run_dir):
+    with open(run_dir / "selected_news.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
             f.write(f"ID: {article['id']}\n")
             f.write(f"Category: {article['category']}\n")
@@ -754,8 +792,8 @@ def save_selected_news(selected_articles):
 
 
 # Step 9-2. 본문, 인스타 캡션, SDXL 이미지 프롬프트까지 저장합니다.
-def save_selected_articles(selected_articles):
-    with open("selected_articles.txt", "w", encoding="utf-8") as f:
+def save_selected_articles(selected_articles, run_dir):
+    with open(run_dir / "selected_articles.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
             f.write(f"ID: {article['id']}\n")
             f.write(f"Category: {article['category']}\n")
@@ -776,9 +814,59 @@ def save_selected_articles(selected_articles):
             f.write("\n\nFinal Image Path:\n")
             f.write(article.get("final_image_path", ""))
             f.write("\n\n---\n\n")
+            
+# Step 10. 업로드 또는 최종 완료된 기사 기록을 history.jsonl에 누적 저장합니다.
+def append_publish_history(selected_articles, status="ready"):
+    published_at = datetime.now().isoformat(timespec="seconds")
+
+    with open("history.jsonl", "a", encoding="utf-8") as f:
+        for article in selected_articles:
+            record = {
+                "published_at": published_at,
+                "status": status,
+                "category": article.get("category", ""),
+                "title": article.get("title", ""),
+                "source": article.get("source", ""),
+                "google_link": article.get("google_link", ""),
+                "resolved_link": article.get("resolved_link", ""),
+                "instagram_post_id": article.get("instagram_post_id", ""),
+                "final_image_path": article.get("final_image_path", ""),
+            }
+
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            
+# outputs 폴더에서 최근 keep_days일보다 오래된 날짜 폴더를 삭제합니다.
+def cleanup_old_outputs(keep_days=3):
+    outputs_dir = Path("outputs")
+
+    if not outputs_dir.exists():
+        return
+
+    today = datetime.now().date()
+
+    for run_dir in outputs_dir.iterdir():
+        if not run_dir.is_dir():
+            continue
+
+        try:
+            run_date = datetime.strptime(run_dir.name, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+
+        age_days = (today - run_date).days
+
+        if age_days >= keep_days:
+            shutil.rmtree(run_dir)
+            print(f"오래된 outputs 폴더 삭제: {run_dir}")
+            
+# 인스타 업로드 성공 후 실행할 후처리 함수입니다.
+def handle_publish_success(published_articles):
+    append_publish_history(published_articles, status="published")
+    cleanup_old_outputs(keep_days=3)
 
 # Step 10. 전체 파이프라인을 실행합니다.
 if __name__ == "__main__":
+    run_dir = create_run_dir()
     news_list = fetch_top_news()
 
     for news in news_list[:3]:
@@ -791,24 +879,19 @@ if __name__ == "__main__":
         selected_result = select_best_articles(news_list)
         print(selected_result)
 
-        with open("gemini_selected_result.txt", "w", encoding="utf-8") as f:
+        with open(run_dir / "gemini_selected_result.txt", "w", encoding="utf-8") as f:
             f.write(selected_result)
 
         selected_articles = match_selected_articles(selected_result, news_list)
 
-        selected_articles = process_content_pipeline(selected_articles)
-        selected_articles = retry_failed_categories_with_backup(selected_articles)
+        selected_articles = process_content_pipeline(selected_articles, run_dir)
+        selected_articles = retry_failed_categories_with_backup(selected_articles, run_dir)
 
-        save_selected_news(selected_articles)
-        save_selected_articles(selected_articles)
+        save_selected_news(selected_articles, run_dir)
+        save_selected_articles(selected_articles, run_dir)
 
+        print("\n[완료] 오늘 콘텐츠 생성 파이프라인이 끝났습니다.")
+        print(f"산출물 저장 위치: {run_dir}")
 
-        with open("history.txt", "w", encoding="utf-8") as f:
-            f.write(news_list[0]["google_link"] + "\n")
-
-        print(
-            f"\n[테스트 알림] '{news_list[0]['title'][:20]}...' 기사를 history.txt에 기록했습니다."
-        )
-        print("한 번 더 실행하면 위 기사가 블랙리스트에 의해 걸러지는지 확인하세요!")
     else:
         print("수집된 뉴스가 없습니다. 구글 뉴스 연결 상태를 확인하세요.")

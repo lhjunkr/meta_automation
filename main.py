@@ -3,6 +3,7 @@ import requests
 import trafilatura
 import json
 import shutil
+import boto3
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -12,6 +13,7 @@ from pathlib import Path
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 from huggingface_hub import InferenceClient
+from botocore.exceptions import ClientError
 
 REQUEST_HEADERS = {
     "User-Agent": (
@@ -564,7 +566,7 @@ def load_korean_font(size, bold=False):
         return ImageFont.truetype(font_path, size=size)
     except OSError:
         return ImageFont.truetype(fallback_path, size=size)
-\
+
 
 def apply_bottom_gradient(image):
     image = image.convert("RGBA")
@@ -698,9 +700,10 @@ def is_article_complete(article):
         and article.get("sdxl_image_prompt_status") == "success"
         and article.get("image_generation_status") == "success"
         and article.get("image_overlay_status") == "success"
+        and article.get("r2_upload_status") == "success"
         and bool(article.get("final_image_path"))
+        and bool(article.get("public_image_url"))
     )
-
 
 def process_content_pipeline(selected_articles, run_dir):
     selected_articles = resolve_selected_article_links(selected_articles)
@@ -714,6 +717,7 @@ def process_content_pipeline(selected_articles, run_dir):
 
     selected_articles = generate_huggingface_images(selected_articles, run_dir)
     selected_articles = render_news_image_overlays(selected_articles)
+    selected_articles = upload_article_images_to_r2(selected_articles, run_dir)
     save_generated_images(selected_articles, run_dir)
 
     return selected_articles
@@ -782,6 +786,8 @@ def save_generated_images(selected_articles, run_dir):
             f.write(f"Image Path: {article.get('image_path', '')}\n")
             f.write(f"Final Image Path: {article.get('final_image_path', '')}\n")
             f.write(f"Overlay Status: {article.get('image_overlay_status', '')}\n")
+            f.write(f"R2 Upload Status: {article.get('r2_upload_status', '')}\n")
+            f.write(f"Public Image URL: {article.get('public_image_url', '')}\n")
             f.write("\n---\n\n")
 
 # Step 9-1. 선택된 기사 메타데이터를 저장합니다.
@@ -821,6 +827,10 @@ def save_selected_articles(selected_articles, run_dir):
             f.write(article.get("image_path", ""))
             f.write("\n\nFinal Image Path:\n")
             f.write(article.get("final_image_path", ""))
+            f.write("\n\nR2 Upload Status:\n")
+            f.write(article.get("r2_upload_status", ""))
+            f.write("\n\nPublic Image URL:\n")
+            f.write(article.get("public_image_url", ""))
             f.write("\n\n---\n\n")
             
 # Step 10. 업로드 또는 최종 완료된 기사 기록을 history.jsonl에 누적 저장합니다.
@@ -871,6 +881,82 @@ def cleanup_old_outputs(keep_days=3):
 def handle_publish_success(published_articles):
     append_publish_history(published_articles, status="published")
     cleanup_old_outputs(keep_days=3)
+    
+def create_r2_client():
+    load_dotenv()
+
+    account_id = os.getenv("R2_ACCOUNT_ID")
+    access_key_id = os.getenv("R2_ACCESS_KEY_ID")
+    secret_access_key = os.getenv("R2_SECRET_ACCESS_KEY")
+
+    if not account_id or not access_key_id or not secret_access_key:
+        raise RuntimeError(".env에 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY를 입력하세요.")
+
+    return boto3.client(
+        "s3",
+        endpoint_url=f"https://{account_id}.r2.cloudflarestorage.com",
+        aws_access_key_id=access_key_id,
+        aws_secret_access_key=secret_access_key,
+        region_name="auto",
+    )
+    
+def upload_image_to_r2(local_path, object_key):
+    load_dotenv()
+
+    bucket_name = os.getenv("R2_BUCKET_NAME")
+    public_base_url = os.getenv("R2_PUBLIC_BASE_URL")
+
+    if not bucket_name or not public_base_url:
+        raise RuntimeError(".env에 R2_BUCKET_NAME, R2_PUBLIC_BASE_URL을 입력하세요.")
+
+    local_path = Path(local_path)
+
+    if not local_path.exists():
+        raise FileNotFoundError(f"업로드할 이미지 파일을 찾을 수 없습니다: {local_path}")
+
+    client = create_r2_client()
+
+    try:
+        client.upload_file(
+            str(local_path),
+            bucket_name,
+            object_key,
+            ExtraArgs={"ContentType": "image/png"},
+        )
+    except ClientError as e:
+        raise RuntimeError(f"R2 업로드 실패: {e}") from e
+
+    return f"{public_base_url.rstrip('/')}/{object_key}"
+
+def upload_article_images_to_r2(selected_articles, run_dir):
+    run_date = run_dir.name
+
+    for article in selected_articles:
+        print(f"R2 이미지 업로드 중: {article['title'][:30]}...")
+
+        final_image_path = article.get("final_image_path")
+
+        if not final_image_path:
+            article["public_image_url"] = ""
+            article["r2_upload_status"] = "skipped_no_final_image"
+            print(" -> 최종 이미지가 없어 R2 업로드를 건너뜁니다.")
+            continue
+
+        object_key = f"{run_date}/article_{article['id']}_final.png"
+
+        try:
+            public_url = upload_image_to_r2(final_image_path, object_key)
+        except Exception as e:
+            article["public_image_url"] = ""
+            article["r2_upload_status"] = "upload_failed"
+            print(f" -> R2 업로드 실패: {e}")
+            continue
+
+        article["public_image_url"] = public_url
+        article["r2_upload_status"] = "success"
+        print(f" -> R2 업로드 완료: {public_url}")
+
+    return selected_articles
 
 # Step 10. 전체 파이프라인을 실행합니다.
 if __name__ == "__main__":

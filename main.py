@@ -15,6 +15,13 @@ from PIL import Image, ImageDraw, ImageFont
 from huggingface_hub import InferenceClient
 from botocore.exceptions import ClientError
 
+# 전체 파이프라인 개요
+# 1. Google News 후보를 수집하고 history.jsonl 기준으로 이미 사용한 기사를 제외합니다.
+# 2. Gemini가 카테고리별 1순위/2순위 기사를 고릅니다.
+# 3. 선택 기사 링크를 원문 URL로 정화하고 본문을 추출합니다.
+# 4. 인스타 캡션, 이미지 프롬프트, 포스터 이미지를 생성합니다.
+# 5. 최종 이미지를 Cloudflare R2에 올리고, Meta API 설정 시 인스타/페이스북에 게시합니다.
+
 REQUEST_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -24,6 +31,7 @@ REQUEST_HEADERS = {
     "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
+# Step 0-1. 오늘 날짜 기준 실행 폴더와 이미지 저장 폴더를 준비합니다.
 def create_run_dir():
     today = datetime.now().strftime("%Y-%m-%d")
     run_dir = Path("outputs") / today
@@ -33,7 +41,7 @@ def create_run_dir():
 
     return run_dir
 
-# history.jsonl에서 이미 사용한 기사 링크를 읽어옵니다.
+# Step 0-2. history.jsonl에서 이미 사용한 기사 링크를 읽어 중복 후보를 제외합니다.
 def load_seen_links():
     seen_links = set()
     history_path = Path("history.jsonl")
@@ -61,7 +69,7 @@ def load_seen_links():
     print(f"기록된 뉴스 {len(seen_links)}건을 블랙리스트에 선탑재했습니다.")
     return seen_links
 
-# Step 1. Google News에서 카테고리별 후보 기사 30개를 수집합니다.
+# Step 1. Google News에서 카테고리별 후보 기사를 수집합니다.
 def fetch_top_news():
     print("[Step 1] 글로벌 구글 뉴스 데이터 수집...")
     
@@ -122,7 +130,7 @@ def fetch_top_news():
     return raw_news
 
 
-# Step 2. Gemini에게 전달할 기사 후보 목록을 만듭니다. 링크는 보내지 않습니다.
+# Step 2. Gemini 선정용 입력을 만듭니다. 링크는 보내지 않고 id/category/title/source만 전달합니다.
 def build_news_context(news_list):
     lines = []
 
@@ -141,7 +149,7 @@ def build_news_context(news_list):
     return "\n\n".join(lines)
 
 
-# Step 3. Gemini가 카테고리별 Best 기사 ID를 선정합니다.
+# Step 3. Gemini가 카테고리별 1순위/2순위 기사 ID를 선정합니다.
 def select_best_articles(news_list):
     load_dotenv()
 
@@ -195,7 +203,7 @@ Backup ID: [Article ID]
 
     return response.text.strip()
 
-# Step 4-1. Gemini가 반환한 Primary ID와 Backup ID를 파싱합니다.
+# Step 4-1. Gemini 응답에서 Primary ID와 Backup ID를 파싱합니다.
 def parse_selected_ids(selected_result):
     selected_items = []
     current_item = {}
@@ -222,7 +230,7 @@ def parse_selected_ids(selected_result):
 
     return selected_items
 
-# Step 4-2. Primary/Backup ID로 원본 기사 데이터를 찾습니다.
+# Step 4-2. 선택된 ID를 원본 뉴스 목록과 매칭하고 백업 기사를 함께 보관합니다.
 def match_selected_articles(selected_result, news_list):
     selected_items = parse_selected_ids(selected_result)
     news_by_id = {news["id"]: news for news in news_list}
@@ -253,7 +261,7 @@ def match_selected_articles(selected_result, news_list):
 
     return selected_articles
 
-# Step 5-1. Google News 암호화 링크를 실제 언론사 URL로 변환합니다.
+# Step 5-1. Google News 중계 링크를 실제 언론사 URL로 정화합니다.
 def resolve_article_url(google_link):
     try:
         decoded_result = gnewsdecoder(google_link, interval=1)
@@ -271,7 +279,7 @@ def resolve_article_url(google_link):
         return ""
 
 
-# Step 5-2. 선택된 3개 기사 링크를 정화합니다.
+# Step 5-2. 선택된 기사들의 Google News 링크를 원문 URL로 정화합니다.
 def resolve_selected_article_links(selected_articles):
     for article in selected_articles:
         print(f"URL 정화 중: {article['title'][:30]}...")
@@ -280,7 +288,7 @@ def resolve_selected_article_links(selected_articles):
     return selected_articles
 
 
-# Step 6-1. 실제 언론사 URL에서 기사 본문을 추출합니다.
+# Step 6-1. 원문 URL에 접속해 기사 본문 텍스트를 추출합니다.
 def fetch_article_body(resolved_link):
     try:
         response = requests.get(
@@ -312,7 +320,7 @@ def fetch_article_body(resolved_link):
     return body, "success"
 
 
-# Step 6-2. 선택된 3개 기사 본문을 수집합니다.
+# Step 6-2. 선택된 기사들의 본문을 수집하고 처리 상태를 저장합니다.
 def fetch_selected_article_bodies(selected_articles):
     for article in selected_articles:
         print(f"본문 수집 중: {article['title'][:30]}...")
@@ -329,7 +337,7 @@ def fetch_selected_article_bodies(selected_articles):
 
     return selected_articles
 
-# Step 7-1. 인스타 캡션 생성을 위한 Gemini 프롬프트를 만듭니다.
+# Step 7-1. 기사 본문을 인스타 캡션으로 바꾸기 위한 Gemini 프롬프트를 만듭니다.
 def build_instagram_caption_prompt(article):
     return f"""[Persona]
 You are a professional Instagram News Curator. Your goal is to rewrite complex news into a viral, human-centric post.
@@ -354,6 +362,7 @@ Write a high-engagement Instagram caption based on the input data.
 (Your caption here)"""
 
 
+# Step 7-1a. Gemini 응답에서 실제 캡션 영역만 분리합니다.
 def parse_instagram_caption(raw_text):
     marker = "===KOREAN_CAPTION==="
 
@@ -363,7 +372,7 @@ def parse_instagram_caption(raw_text):
     return raw_text.strip()
 
 
-# Step 7-2. 기사 1개에 대해 인스타 캡션을 생성합니다.
+# Step 7-2. 기사 1개에 대해 한국어 인스타 캡션을 생성합니다.
 def generate_instagram_caption(article):
     load_dotenv()
 
@@ -394,7 +403,7 @@ def generate_instagram_caption(article):
     return article
 
 
-# Step 7-3. 선택된 기사들에 대해 인스타 캡션을 생성합니다.
+# Step 7-3. 선택된 기사 전체에 대해 인스타 캡션을 순차 생성합니다.
 def generate_instagram_captions(selected_articles):
     for article in selected_articles:
         print(f"인스타 캡션 생성 중: {article['title'][:30]}...")
@@ -403,6 +412,7 @@ def generate_instagram_captions(selected_articles):
     return selected_articles
 
 
+# Step 7-4. 생성된 인스타 캡션을 별도 텍스트 파일로 저장합니다.
 def save_instagram_captions(selected_articles, run_dir):
     with open(run_dir / "instagram_captions.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
@@ -416,7 +426,7 @@ def save_instagram_captions(selected_articles, run_dir):
             f.write("\n\n---\n\n")
 
 
-# Step 8-1. 인스타 캡션을 기반으로 SDXL 이미지 프롬프트를 만듭니다.
+# Step 8-1. 인스타 캡션을 기반으로 SDXL 이미지 생성 프롬프트를 만듭니다.
 def build_sdxl_image_prompt(article):
     step1_output = article.get("instagram_caption", "")
 
@@ -443,6 +453,7 @@ Analyze the caption and create a symbolic editorial visual prompt. You MUST outp
 (Provide only the comma-separated English keywords here)"""
 
 
+# Step 8-1a. Gemini 응답에서 실제 이미지 프롬프트만 분리합니다.
 def parse_sdxl_image_prompt(raw_text):
     marker = "===IMAGE_PROMPT==="
 
@@ -483,7 +494,7 @@ def generate_sdxl_image_prompt(article):
     return article
 
 
-# Step 8-3. 선택된 기사들에 대해 SDXL 이미지 프롬프트를 생성합니다.
+# Step 8-3. 선택된 기사 전체에 대해 이미지 프롬프트를 순차 생성합니다.
 def generate_sdxl_image_prompts(selected_articles):
     for article in selected_articles:
         print(f"SDXL 이미지 프롬프트 생성 중: {article['title'][:30]}...")
@@ -492,6 +503,7 @@ def generate_sdxl_image_prompts(selected_articles):
     return selected_articles
 
 
+# Step 8-4. 생성된 SDXL 이미지 프롬프트를 별도 텍스트 파일로 저장합니다.
 def save_sdxl_image_prompts(selected_articles, run_dir):
     with open(run_dir / "sdxl_image_prompts.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
@@ -505,7 +517,7 @@ def save_sdxl_image_prompts(selected_articles, run_dir):
             f.write("\n\n---\n\n")
 
 
-# Step 9-1. SDXL 이미지 프롬프트를 기반으로 Hugging Face에서 이미지를 생성합니다.
+# Step 9-1. SDXL 프롬프트로 Hugging Face 이미지를 생성해 로컬에 저장합니다.
 def generate_huggingface_image(article, run_dir):
     load_dotenv()
 
@@ -545,7 +557,7 @@ def generate_huggingface_image(article, run_dir):
     return article
 
 
-# Step 9-2. 선택된 기사들에 대해 Hugging Face 이미지를 생성합니다.
+# Step 9-2. 선택된 기사 전체에 대해 포스터 원본 이미지를 순차 생성합니다.
 def generate_huggingface_images(selected_articles, run_dir):
     for article in selected_articles:
         print(f"Hugging Face 이미지 생성 중: {article['title'][:30]}...")
@@ -553,7 +565,8 @@ def generate_huggingface_images(selected_articles, run_dir):
 
     return selected_articles
 
-# Step 9-3. 생성된 이미지 하단에 그라데이션과 기사 텍스트를 합성합니다.
+# Step 9-3. 생성 이미지 하단에 그라데이션과 한국어 제목을 합성합니다.
+# Step 9-3a. 포스터 텍스트 합성에 사용할 한글 폰트를 불러옵니다.
 def load_korean_font(size, bold=False):
     if bold:
         font_path = "/System/Library/Fonts/Supplemental/AppleGothic.ttf"
@@ -568,6 +581,7 @@ def load_korean_font(size, bold=False):
         return ImageFont.truetype(fallback_path, size=size)
 
 
+# Step 9-3b. 제목 가독성을 위해 이미지 하단에 어두운 그라데이션을 입힙니다.
 def apply_bottom_gradient(image):
     image = image.convert("RGBA")
     width, height = image.size
@@ -584,11 +598,13 @@ def apply_bottom_gradient(image):
     return Image.alpha_composite(image, gradient)
 
 
+# Step 9-3c. 줄바꿈 계산에 필요한 텍스트 폭을 측정합니다.
 def text_width(draw, text, font):
     bbox = draw.textbbox((0, 0), text, font=font)
     return bbox[2] - bbox[0]
 
 
+# Step 9-3d. 포스터 제목이 지정 폭과 줄 수 안에 들어오도록 줄바꿈합니다.
 def wrap_text(draw, text, font, max_width, max_lines=2):
     words = text.split()
     lines = []
@@ -620,11 +636,13 @@ def wrap_text(draw, text, font, max_width, max_lines=2):
     return lines
 
 
+# Step 9-3e. 기사 제목 뒤의 언론사 표기를 제거해 백업 제목을 만듭니다.
 def clean_article_title(title):
     if " - " in title:
         return title.rsplit(" - ", 1)[0]
     return title
 
+# Step 9-3f. 포스터에는 캡션 첫 줄을 우선 사용하고 없으면 기사 제목을 사용합니다.
 def extract_poster_title(article):
     caption = article.get("instagram_caption", "")
 
@@ -635,6 +653,7 @@ def extract_poster_title(article):
 
     return clean_article_title(article.get("title", ""))
 
+# Step 9-3g. 기사 1개의 최종 포스터 이미지를 렌더링합니다.
 def render_news_image_overlay(article):
     image_path = article.get("image_path")
     if not image_path:
@@ -686,6 +705,7 @@ def render_news_image_overlay(article):
     return article
 
 
+# Step 9-4. 선택된 기사 전체에 대해 최종 포스터 이미지를 렌더링합니다.
 def render_news_image_overlays(selected_articles):
     for article in selected_articles:
         print(f"이미지 텍스트 합성 중: {article['title'][:30]}...")
@@ -693,6 +713,7 @@ def render_news_image_overlays(selected_articles):
 
     return selected_articles
 
+# Step 10-1. 본문, 캡션, 이미지, R2 업로드까지 성공했는지 검사합니다.
 def is_article_complete(article):
     return (
         article.get("status") == "success"
@@ -705,6 +726,7 @@ def is_article_complete(article):
         and bool(article.get("public_image_url"))
     )
 
+# Step 10-2. 선택 기사에 대해 본문 수집부터 R2 업로드까지 콘텐츠 생성 흐름을 실행합니다.
 def process_content_pipeline(selected_articles, run_dir):
     selected_articles = resolve_selected_article_links(selected_articles)
     selected_articles = fetch_selected_article_bodies(selected_articles)
@@ -722,6 +744,7 @@ def process_content_pipeline(selected_articles, run_dir):
 
     return selected_articles
 
+# Step 10-3. 1순위 기사 처리 실패 시 같은 카테고리의 2순위 기사로 재시도합니다.
 def retry_failed_categories_with_backup(selected_articles, run_dir):
     final_articles = []
     failed_categories = []
@@ -767,6 +790,7 @@ def retry_failed_categories_with_backup(selected_articles, run_dir):
 
     return final_articles
 
+# Step 10-4. 1순위와 2순위가 모두 실패한 카테고리를 기록합니다.
 def save_failed_categories(failed_categories, run_dir):
     with open(run_dir / "failed_categories.txt", "w", encoding="utf-8") as f:
         for item in failed_categories:
@@ -776,6 +800,7 @@ def save_failed_categories(failed_categories, run_dir):
             f.write(f"Reason: {item['reason']}\n")
             f.write("\n---\n\n")
 
+# Step 11-1. 생성 이미지, 최종 이미지, R2 공개 URL 정보를 저장합니다.
 def save_generated_images(selected_articles, run_dir):
     with open(run_dir / "generated_images.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
@@ -790,7 +815,7 @@ def save_generated_images(selected_articles, run_dir):
             f.write(f"Public Image URL: {article.get('public_image_url', '')}\n")
             f.write("\n---\n\n")
 
-# Step 9-1. 선택된 기사 메타데이터를 저장합니다.
+# Step 12-1. 최종 선택 기사 메타데이터를 실행 폴더에 저장합니다.
 def save_selected_news(selected_articles, run_dir):
     with open(run_dir / "selected_news.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
@@ -805,7 +830,7 @@ def save_selected_news(selected_articles, run_dir):
             f.write("\n---\n\n")
 
 
-# Step 9-2. 본문, 인스타 캡션, SDXL 이미지 프롬프트까지 저장합니다.
+# Step 12-2. 본문, 캡션, 이미지 경로, 게시 상태까지 상세 결과를 저장합니다.
 def save_selected_articles(selected_articles, run_dir):
     with open(run_dir / "selected_articles.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
@@ -831,9 +856,26 @@ def save_selected_articles(selected_articles, run_dir):
             f.write(article.get("r2_upload_status", ""))
             f.write("\n\nPublic Image URL:\n")
             f.write(article.get("public_image_url", ""))
+            f.write("\n\nInstagram Publish Status:\n")
+            f.write(article.get("instagram_publish_status", ""))
+            f.write("\nInstagram Post ID:\n")
+            f.write(article.get("instagram_post_id", ""))
+            f.write("\nInstagram Publish Error:\n")
+            f.write(article.get("instagram_publish_error", ""))
+            f.write("\n\nFacebook Publish Status:\n")
+            f.write(article.get("facebook_publish_status", ""))
+            f.write("\nFacebook Post ID:\n")
+            f.write(article.get("facebook_post_id", ""))
+            f.write("\nFacebook Publish Error:\n")
+            f.write(article.get("facebook_publish_error", ""))
+
+            f.write("\n\nOverall Publish Status:\n")
+            f.write(article.get("publish_status", ""))
+
             f.write("\n\n---\n\n")
+
             
-# Step 10. 업로드 또는 최종 완료된 기사 기록을 history.jsonl에 누적 저장합니다.
+# Step 13-1. 게시 완료 기사를 history.jsonl에 누적 기록해 다음 실행에서 제외합니다.
 def append_publish_history(selected_articles, status="ready"):
     published_at = datetime.now().isoformat(timespec="seconds")
 
@@ -853,7 +895,7 @@ def append_publish_history(selected_articles, status="ready"):
 
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             
-# outputs 폴더에서 최근 keep_days일보다 오래된 날짜 폴더를 삭제합니다.
+# Step 13-2. outputs 폴더에서 보관 기간이 지난 실행 결과를 삭제합니다.
 def cleanup_old_outputs(keep_days=3):
     outputs_dir = Path("outputs")
 
@@ -877,11 +919,266 @@ def cleanup_old_outputs(keep_days=3):
             shutil.rmtree(run_dir)
             print(f"오래된 outputs 폴더 삭제: {run_dir}")
             
-# 인스타 업로드 성공 후 실행할 후처리 함수입니다.
+# Step 13-3. 소셜 업로드 성공 후 history 기록과 오래된 outputs 정리를 수행합니다.
 def handle_publish_success(published_articles):
     append_publish_history(published_articles, status="published")
     cleanup_old_outputs(keep_days=3)
     
+# Optional Publish 1. Instagram/Facebook 게시에 필요한 Meta 환경변수를 검증합니다.
+def validate_meta_config():
+    load_dotenv()
+
+    required_keys = [
+        "META_ACCESS_TOKEN",
+        "IG_USER_ID",
+        "FACEBOOK_PAGE_ID",
+        "FACEBOOK_PAGE_ACCESS_TOKEN",
+    ]
+
+    missing_keys = [key for key in required_keys if not os.getenv(key)]
+
+    if missing_keys:
+        raise RuntimeError(
+            ".env에 Meta 업로드 설정이 없습니다: " + ", ".join(missing_keys)
+        )
+
+# Optional Publish 2. Instagram Graph API에 이미지 게시용 미디어 컨테이너를 생성합니다.
+def create_instagram_media_container(article):
+    load_dotenv()
+
+    access_token = os.getenv("META_ACCESS_TOKEN")
+    ig_user_id = os.getenv("IG_USER_ID")
+
+    image_url = article.get("public_image_url")
+    caption = article.get("instagram_caption", "")
+
+    if not image_url:
+        raise RuntimeError("public_image_url이 없어 Instagram 컨테이너를 만들 수 없습니다.")
+
+    url = f"https://graph.facebook.com/v19.0/{ig_user_id}/media"
+
+    payload = {
+        "image_url": image_url,
+        "caption": caption,
+        "access_token": access_token,
+    }
+
+    response = requests.post(url, data=payload, timeout=30)
+    data = response.json()
+
+    if response.status_code >= 400 or "id" not in data:
+        raise RuntimeError(f"Instagram 컨테이너 생성 실패: {data}")
+
+    return data["id"]
+
+
+# Optional Publish 3. 생성된 Instagram 미디어 컨테이너를 실제 게시물로 발행합니다.
+def publish_instagram_media(creation_id):
+    load_dotenv()
+
+    access_token = os.getenv("META_ACCESS_TOKEN")
+    ig_user_id = os.getenv("IG_USER_ID")
+
+    url = f"https://graph.facebook.com/v19.0/{ig_user_id}/media_publish"
+
+    payload = {
+        "creation_id": creation_id,
+        "access_token": access_token,
+    }
+
+    response = requests.post(url, data=payload, timeout=30)
+    data = response.json()
+
+    if response.status_code >= 400 or "id" not in data:
+        raise RuntimeError(f"Instagram 게시 실패: {data}")
+
+    return data["id"]
+
+# Optional Publish 4. 기사 1개를 Instagram에 게시하고 성공/실패 상태를 저장합니다.
+def publish_article_to_instagram(article):
+    try:
+        creation_id = create_instagram_media_container(article)
+        instagram_post_id = publish_instagram_media(creation_id)
+
+        article["instagram_publish_status"] = "success"
+        article["instagram_post_id"] = instagram_post_id
+        article["instagram_publish_error"] = ""
+
+        print(f" -> Instagram 게시 완료: {instagram_post_id}")
+
+    except Exception as e:
+        article["instagram_publish_status"] = "failed"
+        article["instagram_post_id"] = ""
+        article["instagram_publish_error"] = str(e)
+
+        print(f" -> Instagram 게시 실패: {e}")
+
+    return article
+
+# Optional Publish 5. 기사 1개를 Facebook 페이지에 게시하고 성공/실패 상태를 저장합니다.
+def publish_article_to_facebook_page(article):
+    load_dotenv()
+
+    page_id = os.getenv("FACEBOOK_PAGE_ID")
+    page_access_token = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
+
+    image_url = article.get("public_image_url")
+    caption = article.get("instagram_caption", "")
+
+    if not image_url:
+        article["facebook_publish_status"] = "failed"
+        article["facebook_post_id"] = ""
+        article["facebook_publish_error"] = "public_image_url이 없어 Facebook에 게시할 수 없습니다."
+        return article
+
+    url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
+
+    payload = {
+        "url": image_url,
+        "caption": caption,
+        "access_token": page_access_token,
+        "published": "true",
+    }
+
+    try:
+        response = requests.post(url, data=payload, timeout=30)
+        data = response.json()
+
+        if response.status_code >= 400 or "id" not in data:
+            raise RuntimeError(f"Facebook 게시 실패: {data}")
+
+        article["facebook_publish_status"] = "success"
+        article["facebook_post_id"] = data["id"]
+        article["facebook_publish_error"] = ""
+
+        print(f" -> Facebook 게시 완료: {data['id']}")
+
+    except Exception as e:
+        article["facebook_publish_status"] = "failed"
+        article["facebook_post_id"] = ""
+        article["facebook_publish_error"] = str(e)
+
+        print(f" -> Facebook 게시 실패: {e}")
+
+    return article
+
+MAX_DAILY_POSTS = int(os.getenv("MAX_DAILY_POSTS", "3"))
+
+
+# Optional Publish 6. 오늘 이미 게시된 건수를 세어 일일 업로드 한도를 지킵니다.
+def count_today_published():
+    history_path = Path("history.jsonl")
+
+    if not history_path.exists():
+        return 0
+
+    today = datetime.now().date()
+    count = 0
+
+    with open(history_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+
+            if not line:
+                continue
+
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if record.get("status") != "published":
+                continue
+
+            published_at = record.get("published_at", "")
+
+            try:
+                published_date = datetime.fromisoformat(published_at).date()
+            except ValueError:
+                continue
+
+            if published_date == today:
+                count += 1
+
+    return count
+
+
+# Optional Publish 7. 같은 기사 또는 같은 이미지가 이미 게시됐는지 history.jsonl에서 확인합니다.
+def is_already_published(article):
+    history_path = Path("history.jsonl")
+
+    if not history_path.exists():
+        return False
+
+    current_google_link = article.get("google_link", "")
+    current_resolved_link = article.get("resolved_link", "")
+    current_public_image_url = article.get("public_image_url", "")
+
+    with open(history_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+
+            if not line:
+                continue
+
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if current_google_link and current_google_link == record.get("google_link"):
+                return True
+
+            if current_resolved_link and current_resolved_link == record.get("resolved_link"):
+                return True
+
+            if current_public_image_url and current_public_image_url == record.get("public_image_url"):
+                return True
+
+    return False
+
+
+# Optional Publish 8. 일일 한도와 중복 여부를 확인한 뒤 Instagram/Facebook에 순차 게시합니다.
+def publish_to_social_channels(selected_articles):
+    validate_meta_config()
+
+    published_articles = []
+    already_published_today = count_today_published()
+    remaining_slots = MAX_DAILY_POSTS - already_published_today
+
+    if remaining_slots <= 0:
+        print(f"오늘 업로드 한도({MAX_DAILY_POSTS}개)에 도달했습니다.")
+        return published_articles
+
+    for article in selected_articles[:remaining_slots]:
+        print(f"소셜 채널 게시 중: {article['title'][:30]}...")
+
+        if not article.get("public_image_url"):
+            article["publish_status"] = "skipped_no_public_image_url"
+            print(" -> public_image_url이 없어 게시를 건너뜁니다.")
+            continue
+
+        if is_already_published(article):
+            article["publish_status"] = "skipped_already_published"
+            print(" -> 이미 게시된 기사라 건너뜁니다.")
+            continue
+
+        publish_article_to_instagram(article)
+        publish_article_to_facebook_page(article)
+
+        if (
+            article.get("instagram_publish_status") == "success"
+            and article.get("facebook_publish_status") == "success"
+        ):
+            article["publish_status"] = "published"
+            published_articles.append(article)
+        else:
+            article["publish_status"] = "failed"
+
+    return published_articles
+
+    
+# Step 11-2. Cloudflare R2 업로드에 사용할 S3 호환 클라이언트를 생성합니다.
 def create_r2_client():
     load_dotenv()
 
@@ -900,6 +1197,7 @@ def create_r2_client():
         region_name="auto",
     )
     
+# Step 11-3. 로컬 최종 이미지를 R2 버킷에 업로드하고 공개 URL을 반환합니다.
 def upload_image_to_r2(local_path, object_key):
     load_dotenv()
 
@@ -928,6 +1226,7 @@ def upload_image_to_r2(local_path, object_key):
 
     return f"{public_base_url.rstrip('/')}/{object_key}"
 
+# Step 11-4. 선택된 기사들의 최종 이미지를 R2에 업로드합니다.
 def upload_article_images_to_r2(selected_articles, run_dir):
     run_date = run_dir.name
 
@@ -958,8 +1257,9 @@ def upload_article_images_to_r2(selected_articles, run_dir):
 
     return selected_articles
 
-# Step 10. 전체 파이프라인을 실행합니다.
+# Main. 전체 콘텐츠 생성 파이프라인을 실행합니다.
 if __name__ == "__main__":
+    # 실행 폴더를 만든 뒤 오늘 사용할 뉴스 후보를 수집합니다.
     run_dir = create_run_dir()
     news_list = fetch_top_news()
 
@@ -976,13 +1276,19 @@ if __name__ == "__main__":
         with open(run_dir / "gemini_selected_result.txt", "w", encoding="utf-8") as f:
             f.write(selected_result)
 
+        # Gemini가 고른 ID를 원본 기사 데이터와 매칭한 뒤 콘텐츠 생성 파이프라인을 실행합니다.
         selected_articles = match_selected_articles(selected_result, news_list)
 
         selected_articles = process_content_pipeline(selected_articles, run_dir)
         selected_articles = retry_failed_categories_with_backup(selected_articles, run_dir)
 
+        # 최종 산출물을 파일로 저장합니다.
         save_selected_news(selected_articles, run_dir)
         save_selected_articles(selected_articles, run_dir)
+
+        # Meta API 설정이 완료되면 아래 2줄을 활성화해 실제 소셜 게시까지 진행합니다.
+        # published_articles = publish_to_social_channels(selected_articles)
+        # handle_publish_success(published_articles)
 
         print("\n[완료] 오늘 콘텐츠 생성 파이프라인이 끝났습니다.")
         print(f"산출물 저장 위치: {run_dir}")

@@ -31,6 +31,29 @@ REQUEST_HEADERS = {
     "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
+EXCLUDED_SOURCE_KEYWORDS = [
+    "한겨레",
+    "hankyoreh",
+    "경향",
+    "khan",
+    "내일신문",
+    "naeil",
+    "mbc",
+    "문화방송",
+    "뉴스타파",
+    "newstapa",
+    "미디어오늘",
+    "mediatoday",
+    "오마이뉴스",
+    "ohmynews",
+    "프레시안",
+    "pressian",
+]
+
+def is_excluded_source(source):
+    normalized_source = source.lower()
+    return any(keyword.lower() in normalized_source for keyword in EXCLUDED_SOURCE_KEYWORDS)
+
 # Step 0-1. 오늘 날짜 기준 실행 폴더와 이미지 저장 폴더를 준비합니다.
 def create_run_dir():
     today = datetime.now().strftime("%Y-%m-%d")
@@ -89,6 +112,11 @@ def fetch_top_news():
             source = ""
             if hasattr(entry, "source") and entry.source:
                 source = entry.source.get("title", "")
+                
+            if is_excluded_source(source):
+                print(f" -> 제외 언론사 스킵: {source}")
+                continue
+
 
             raw_news.append(
                 {

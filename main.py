@@ -4,6 +4,8 @@ import trafilatura
 import json
 import shutil
 import boto3
+import random
+import time
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -1090,8 +1092,28 @@ def publish_article_to_facebook_page(article):
 
     return article
 
-MAX_DAILY_POSTS = int(os.getenv("MAX_DAILY_POSTS", "3"))
+def get_int_env(name, default):
+    load_dotenv()
 
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+def get_publish_delay_seconds(publish_index):
+    min_interval_minutes = get_int_env("MIN_POST_INTERVAL_MINUTES", 90)
+    jitter_min_minutes = get_int_env("POST_JITTER_MINUTES_MIN", 5)
+    jitter_max_minutes = get_int_env("POST_JITTER_MINUTES_MAX", 25)
+
+    jitter_seconds = random.randint(
+        jitter_min_minutes * 60,
+        jitter_max_minutes * 60,
+    )
+
+    if publish_index == 0:
+        return jitter_seconds
+
+    return (min_interval_minutes * 60) + jitter_seconds
 
 # Optional Publish 6. 오늘 이미 게시된 건수를 세어 일일 업로드 한도를 지킵니다.
 def count_today_published():
@@ -1171,15 +1193,19 @@ def publish_to_social_channels(selected_articles):
     validate_meta_config()
 
     published_articles = []
+    max_daily_posts = get_int_env("MAX_DAILY_POSTS", 3)
     already_published_today = count_today_published()
-    remaining_slots = MAX_DAILY_POSTS - already_published_today
+    remaining_slots = max_daily_posts - already_published_today
 
     if remaining_slots <= 0:
-        print(f"오늘 업로드 한도({MAX_DAILY_POSTS}개)에 도달했습니다.")
+        print(f"오늘 업로드 한도({max_daily_posts}개)에 도달했습니다.")
         return published_articles
 
-    for article in selected_articles[:remaining_slots]:
-        print(f"소셜 채널 게시 중: {article['title'][:30]}...")
+    publish_attempt_index = 0
+
+    for article in selected_articles:
+        if len(published_articles) >= remaining_slots:
+            break
 
         if not article.get("public_image_url"):
             article["publish_status"] = "skipped_no_public_image_url"
@@ -1190,7 +1216,16 @@ def publish_to_social_channels(selected_articles):
             article["publish_status"] = "skipped_already_published"
             print(" -> 이미 게시된 기사라 건너뜁니다.")
             continue
+        
+        delay_seconds = get_publish_delay_seconds(publish_attempt_index)
 
+        if delay_seconds > 0:
+            delay_minutes = round(delay_seconds / 60, 1)
+            print(f"게시 전 대기: {delay_minutes}분")
+            time.sleep(delay_seconds)
+
+        publish_attempt_index += 1
+        
         publish_article_to_instagram(article)
         publish_article_to_facebook_page(article)
 
@@ -1315,8 +1350,8 @@ if __name__ == "__main__":
         save_selected_articles(selected_articles, run_dir)
 
         # Meta API 설정이 완료되면 아래 2줄을 활성화해 실제 소셜 게시까지 진행합니다.
-        # published_articles = publish_to_social_channels(selected_articles)
-        # handle_publish_success(published_articles)
+        published_articles = publish_to_social_channels(selected_articles)
+        handle_publish_success(published_articles)
 
         print("\n[완료] 오늘 콘텐츠 생성 파이프라인이 끝났습니다.")
         print(f"산출물 저장 위치: {run_dir}")

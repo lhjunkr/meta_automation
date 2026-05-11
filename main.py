@@ -381,7 +381,7 @@ You are a professional Instagram News Curator. Your goal is to rewrite complex n
 
 [Task: Instagram Caption (KOREAN ONLY)]
 Write a high-engagement Instagram caption based on the input data.
-1. Headline: Start with "[속보🚨]" followed by a punchy, click-worthy headline.
+1. Headline: Start with "[속보]" followed by a punchy, click-worthy headline.
 2. Hook: A catchy opening sentence to stop the scroll.
 3. Summary: 3 clear, punchy bullet points using 📍 or ✅. (Facts only, no hallucinations).
 4. Context: A friendly explanation of why this news is important to the reader.
@@ -708,9 +708,9 @@ def render_news_image_overlay(article):
     footer_font = load_korean_font(35)
 
     x = 75
-    label_y = 970
-    title_y = 1040
-    footer_y = 1190
+    label_y = 900
+    title_y = 970
+    footer_y = 1140
     max_width = image.size[0] - (x * 2)
 
     label = "[속보]"

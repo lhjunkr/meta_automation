@@ -22,7 +22,7 @@ from botocore.exceptions import ClientError
 # 2. Gemini가 카테고리별 1순위/2순위 기사를 고릅니다.
 # 3. 선택 기사 링크를 원문 URL로 정화하고 본문을 추출합니다.
 # 4. 인스타 캡션, 이미지 프롬프트, 포스터 이미지를 생성합니다.
-# 5. 최종 이미지를 Cloudflare R2에 올리고, Meta API 설정 시 인스타/페이스북에 게시합니다.
+# 5. 최종 이미지를 Cloudflare R2에 올리고, 설정된 Meta API로 인스타/페이스북에 게시합니다.
 
 REQUEST_HEADERS = {
     "User-Agent": (
@@ -33,6 +33,7 @@ REQUEST_HEADERS = {
     "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
+# 수집 정책. 운영 기준상 제외할 언론사명/도메인 키워드를 관리합니다.
 EXCLUDED_SOURCE_KEYWORDS = [
     "한겨레",
     "hankyoreh",
@@ -52,6 +53,7 @@ EXCLUDED_SOURCE_KEYWORDS = [
     "pressian",
 ]
 
+# 수집한 기사 출처가 제외 키워드에 해당하는지 확인합니다.
 def is_excluded_source(source):
     normalized_source = source.lower()
     return any(keyword.lower() in normalized_source for keyword in EXCLUDED_SOURCE_KEYWORDS)
@@ -97,9 +99,9 @@ def load_seen_links():
 # Step 1. Google News에서 카테고리별 후보 기사를 수집합니다.
 def fetch_top_news():
     print("[Step 1] 글로벌 구글 뉴스 데이터 수집...")
-    
+
     seen_links = load_seen_links()
-    
+
     gn_kr = GoogleNews(lang="ko", country="KR")
     gn_us = GoogleNews(lang="en", country="US")
     raw_news = []
@@ -114,7 +116,7 @@ def fetch_top_news():
             source = ""
             if hasattr(entry, "source") and entry.source:
                 source = entry.source.get("title", "")
-                
+
             if is_excluded_source(source):
                 print(f" -> 제외 언론사 스킵: {source}")
                 continue
@@ -904,7 +906,7 @@ def save_selected_articles(selected_articles, run_dir):
 
             f.write("\n\n---\n\n")
 
-            
+
 # Step 13-1. 게시 완료 기사를 history.jsonl에 누적 기록해 다음 실행에서 제외합니다.
 def append_publish_history(selected_articles, status="ready"):
     published_at = datetime.now().isoformat(timespec="seconds")
@@ -924,7 +926,7 @@ def append_publish_history(selected_articles, status="ready"):
             }
 
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
-            
+
 # Step 13-2. outputs 폴더에서 보관 기간이 지난 실행 결과를 삭제합니다.
 def cleanup_old_outputs(keep_days=3):
     outputs_dir = Path("outputs")
@@ -948,13 +950,13 @@ def cleanup_old_outputs(keep_days=3):
         if age_days >= keep_days:
             shutil.rmtree(run_dir)
             print(f"오래된 outputs 폴더 삭제: {run_dir}")
-            
+
 # Step 13-3. 소셜 업로드 성공 후 history 기록과 오래된 outputs 정리를 수행합니다.
 def handle_publish_success(published_articles):
     append_publish_history(published_articles, status="published")
     cleanup_old_outputs(keep_days=3)
-    
-# Optional Publish 1. Instagram/Facebook 게시에 필요한 Meta 환경변수를 검증합니다.
+
+# Step 14-1. Instagram/Facebook 게시에 필요한 Meta 환경변수를 검증합니다.
 def validate_meta_config():
     load_dotenv()
 
@@ -972,7 +974,7 @@ def validate_meta_config():
             ".env에 Meta 업로드 설정이 없습니다: " + ", ".join(missing_keys)
         )
 
-# Optional Publish 2. Instagram Graph API에 이미지 게시용 미디어 컨테이너를 생성합니다.
+# Step 14-2. Instagram Graph API에 이미지 게시용 미디어 컨테이너를 생성합니다.
 def create_instagram_media_container(article):
     load_dotenv()
 
@@ -1002,7 +1004,7 @@ def create_instagram_media_container(article):
     return data["id"]
 
 
-# Optional Publish 3. 생성된 Instagram 미디어 컨테이너를 실제 게시물로 발행합니다.
+# Step 14-3. 생성된 Instagram 미디어 컨테이너를 실제 게시물로 발행합니다.
 def publish_instagram_media(creation_id):
     load_dotenv()
 
@@ -1024,7 +1026,7 @@ def publish_instagram_media(creation_id):
 
     return data["id"]
 
-# Optional Publish 4. 기사 1개를 Instagram에 게시하고 성공/실패 상태를 저장합니다.
+# Step 14-4. 기사 1개를 Instagram에 게시하고 성공/실패 상태를 저장합니다.
 def publish_article_to_instagram(article):
     try:
         creation_id = create_instagram_media_container(article)
@@ -1045,7 +1047,7 @@ def publish_article_to_instagram(article):
 
     return article
 
-# Optional Publish 5. 기사 1개를 Facebook 페이지에 게시하고 성공/실패 상태를 저장합니다.
+# Step 14-5. 기사 1개를 Facebook 페이지에 게시하고 성공/실패 상태를 저장합니다.
 def publish_article_to_facebook_page(article):
     load_dotenv()
 
@@ -1092,6 +1094,7 @@ def publish_article_to_facebook_page(article):
 
     return article
 
+# Step 14-6. 게시 운영값을 .env에서 정수로 읽고 잘못된 값이면 기본값을 사용합니다.
 def get_int_env(name, default):
     load_dotenv()
 
@@ -1100,6 +1103,7 @@ def get_int_env(name, default):
     except ValueError:
         return default
 
+# Step 14-7. 연속 게시를 피하기 위해 게시 순서별 대기 시간을 계산합니다.
 def get_publish_delay_seconds(publish_index):
     min_interval_minutes = get_int_env("MIN_POST_INTERVAL_MINUTES", 90)
     jitter_min_minutes = get_int_env("POST_JITTER_MINUTES_MIN", 5)
@@ -1115,7 +1119,7 @@ def get_publish_delay_seconds(publish_index):
 
     return (min_interval_minutes * 60) + jitter_seconds
 
-# Optional Publish 6. 오늘 이미 게시된 건수를 세어 일일 업로드 한도를 지킵니다.
+# Step 14-8. 오늘 이미 게시된 건수를 세어 일일 업로드 한도를 지킵니다.
 def count_today_published():
     history_path = Path("history.jsonl")
 
@@ -1153,7 +1157,7 @@ def count_today_published():
     return count
 
 
-# Optional Publish 7. 같은 기사 또는 같은 이미지가 이미 게시됐는지 history.jsonl에서 확인합니다.
+# Step 14-9. 같은 기사 또는 같은 이미지가 이미 게시됐는지 history.jsonl에서 확인합니다.
 def is_already_published(article):
     history_path = Path("history.jsonl")
 
@@ -1188,7 +1192,7 @@ def is_already_published(article):
     return False
 
 
-# Optional Publish 8. 일일 한도와 중복 여부를 확인한 뒤 Instagram/Facebook에 순차 게시합니다.
+# Step 14-10. 일일 한도와 중복 여부를 확인한 뒤 Instagram/Facebook에 순차 게시합니다.
 def publish_to_social_channels(selected_articles):
     validate_meta_config()
 
@@ -1216,7 +1220,7 @@ def publish_to_social_channels(selected_articles):
             article["publish_status"] = "skipped_already_published"
             print(" -> 이미 게시된 기사라 건너뜁니다.")
             continue
-        
+
         delay_seconds = get_publish_delay_seconds(publish_attempt_index)
 
         if delay_seconds > 0:
@@ -1225,7 +1229,7 @@ def publish_to_social_channels(selected_articles):
             time.sleep(delay_seconds)
 
         publish_attempt_index += 1
-        
+
         publish_article_to_instagram(article)
         publish_article_to_facebook_page(article)
 
@@ -1240,7 +1244,7 @@ def publish_to_social_channels(selected_articles):
 
     return published_articles
 
-    
+
 # Step 11-2. Cloudflare R2 업로드에 사용할 S3 호환 클라이언트를 생성합니다.
 def create_r2_client():
     load_dotenv()
@@ -1259,7 +1263,7 @@ def create_r2_client():
         aws_secret_access_key=secret_access_key,
         region_name="auto",
     )
-    
+
 # Step 11-3. 로컬 최종 이미지를 R2 버킷에 업로드하고 공개 URL을 반환합니다.
 def upload_image_to_r2(local_path, object_key):
     load_dotenv()
@@ -1349,7 +1353,7 @@ if __name__ == "__main__":
         save_selected_news(selected_articles, run_dir)
         save_selected_articles(selected_articles, run_dir)
 
-        # Meta API 설정이 완료되면 아래 2줄을 활성화해 실제 소셜 게시까지 진행합니다.
+        # 생성된 콘텐츠를 실제 소셜 채널에 게시하고 성공한 기사만 history에 기록합니다.
         published_articles = publish_to_social_channels(selected_articles)
         handle_publish_success(published_articles)
 

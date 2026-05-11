@@ -469,20 +469,20 @@ You are a Visual Director specializing in photojournalism. You transform text-ba
 - Generated Caption: {step1_output}
 
 [Task: SDXL Image Prompt (ENGLISH ONLY, KEYWORD FORMAT)]
-Analyze the caption and create a symbolic editorial visual prompt. You MUST output a comma-separated list of keywords, NOT full sentences.
+Create a realistic editorial news photo prompt from the caption. Output only comma-separated English keywords.
 
-1. Core Concept: Extract the most striking visual element (e.g., "A solitary figure in a dark office", "A glowing stock market chart").
-2. Format Rules: Use this exact structure -> [Core Concept], [Style], [Composition], [Lighting/Atmosphere].
-3. Style Keywords: Photojournalism, editorial photography, candid shot, shot on 35mm lens, 8k resolution, highly detailed, photorealistic.
-4. Composition & Layout (CRITICAL):
-   - Include keywords: "vertical portrait", "main subject in upper half".
-   - Include keywords for text space: "dark negative space at bottom", "soft black gradient at bottom edge", "vignette".
-5. Local Context: Add "Seoul street" or "Korean context" ONLY if relevant.
-6. Constraints: Include "no text", "no watermarks" in the prompt. Do not depict identifiable real people. Use symbolic subjects.
+Rules:
+- Prefer credible real-world scenes: offices, documents, screens, streets, public buildings, markets, vehicles, conference rooms, newsrooms, city scenes.
+- Style: photojournalism, documentary editorial photography, candid real-world scene, 35mm lens, natural light, realistic colors, subtle film grain, authentic news photo texture.
+- Layout: vertical portrait, main subject in upper half, dark negative space at bottom, soft black gradient at bottom edge, vignette.
+- Avoid: glossy advertisement style, cinematic lighting, surrealism, futuristic visuals, exaggerated drama, over-saturation, artificial glow, obvious AI-generated poster look.
+- People: no identifiable real people; if included, make them candid, distant, natural, non-identifiable; avoid close-up faces and distorted anatomy.
+- Always include: no text, no watermark, no logo, no AI art look, no glossy advertisement, no cinematic lighting, no surrealism, no oversaturation, no artificial glow, no distorted anatomy.
 
 [Output Format]
 ===IMAGE_PROMPT===
-(Provide only the comma-separated English keywords here)"""
+(Comma-separated English keywords only)
+"""
 
 
 # Step 8-1a. Gemini 응답에서 실제 이미지 프롬프트만 분리합니다.

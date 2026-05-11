@@ -1,60 +1,232 @@
-# Instagram/Facebook News Automation
+# News-to-Social Automation Pipeline
 
-A Python automation pipeline for turning daily news into Instagram and Facebook-ready content.
+### Google News → Gemini → SDXL → Cloudflare R2 → Meta Graph API
 
-The project collects news candidates from Google News, uses Gemini to select relevant articles, extracts article bodies, generates Korean social media captions, creates poster images, uploads final images to Cloudflare R2, and prepares Instagram/Facebook publishing through the Meta Graph API.
+A Python-based automation pipeline that transforms daily news into localized Instagram and Facebook content. The system collects news candidates, selects articles with Gemini, extracts article bodies, generates Korean captions, creates poster images, uploads final images to Cloudflare R2, and publishes through the official Meta Graph API.
 
-## Current Status
+> Current status: the main pipeline is implemented, Cloudflare R2 upload has been tested, and manual Instagram/Facebook posting through Meta Graph API has succeeded. Full production hardening such as token refresh, deployment scheduling, monitoring, and alerting is still pending.
 
-This project is still in development.
+---
 
-- News collection, article selection, body extraction, caption generation, image generation, poster overlay, and Cloudflare R2 upload have been implemented.
-- Cloudflare R2 image upload has been tested successfully.
-- Meta/Instagram/Facebook publishing functions are implemented, but the required Meta API credentials have not been added yet.
-- The social publishing flow has not been fully tested because the Meta API setup is not complete yet.
+## System Logic
 
-## Pipeline
+The project is designed around four stages of social content production:
 
-1. Collect fresh news candidates from Google News.
-2. Exclude articles already recorded in `history.jsonl`.
-3. Send only `id`, `category`, `title`, and `source` to Gemini.
-4. Ask Gemini to choose a primary and backup article for each category.
-5. Resolve selected Google News links into original publisher URLs.
-6. Extract article body text using `requests` and `trafilatura`.
-7. Generate Korean social media captions with Gemini.
-8. Generate SDXL image prompts with Gemini.
-9. Generate poster images through Hugging Face.
-10. Add Korean title text and a bottom gradient overlay with Pillow.
-11. Upload final images to Cloudflare R2.
-12. Save local run outputs under `outputs/YYYY-MM-DD/`.
-13. Optionally publish to Instagram and Facebook once Meta API credentials are configured.
+1. **Discovery**: collect fresh news candidates.
+2. **Curation**: select relevant articles with Gemini.
+3. **Creation**: generate captions and poster images.
+4. **Distribution**: publish through official Meta APIs.
 
-## Features
+The publishing flow avoids browser automation and uses the Meta Graph API for Instagram and Facebook posting.
 
-- Google News candidate collection by category
-- Gemini-based article selection with primary/backup fallback
-- Google News URL decoding
-- Article body extraction
-- Korean social media caption generation
-- SDXL image prompt generation
-- Hugging Face image generation
-- Poster title overlay with Korean font support
-- Cloudflare R2 image hosting
-- Prepared Instagram and Facebook publishing functions
-- Daily publish limit guard
-- Duplicate publish prevention through `history.jsonl`
+---
+
+## Architecture & Workflow
+
+| Phase | Process | Technology |
+| --- | --- | --- |
+| 1. Ingestion | Collect Google News candidates and deduplicate articles | `pygooglenews`, `history.jsonl` |
+| 2. Filtering | Exclude already-used links and configured news sources | `history.jsonl`, source keyword filters |
+| 3. Selection | Select primary/backup articles by category | `Google Gemini` |
+| 4. Extraction | Resolve Google News links and extract article body text | `googlenewsdecoder`, `requests`, `trafilatura` |
+| 5. Captioning | Generate Korean Instagram/Facebook captions | `Google Gemini` |
+| 6. Image Prompting | Generate SDXL image prompts | `Google Gemini` |
+| 7. Image Generation | Create poster images | `Hugging Face Inference API`, `SDXL` |
+| 8. Composition | Add Korean headline, source, date, and gradient overlay | `Pillow` |
+| 9. Hosting | Upload final images to public object storage | `Cloudflare R2`, `boto3` |
+| 10. Publishing | Publish to Instagram and Facebook | `Meta Graph API` |
+| 11. History | Record successful posts and clean old outputs | `history.jsonl`, `outputs/` |
+
+---
+
+## Tech Stack
+
+- Python 3.10+
+- Google Gemini API
+- Hugging Face Inference API
+- Stable Diffusion XL
+- Cloudflare R2
+- Meta Graph API
+- `pygooglenews`
+- `googlenewsdecoder`
+- `requests`
+- `trafilatura`
+- `Pillow`
+- `boto3`
+- `python-dotenv`
+
+---
 
 ## Requirements
 
-- Python 3.11+
-- Gemini API key
-- Hugging Face token
-- Cloudflare R2 bucket and API credentials
-- Meta Developer app and access tokens for Instagram/Facebook publishing
+You need accounts and credentials for:
 
-## Setup
+- Google Gemini API
+- Hugging Face
+- Cloudflare R2
+- Meta Developer App
+- Instagram Professional account
+- Facebook Page connected to the Instagram account
+
+---
+
+## Environment Variables
+
+Create a `.env` file from `.env.example`.
+
+```env
+GEMINI_API_KEY=
+HF_TOKEN=
+
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET_NAME=
+R2_PUBLIC_BASE_URL=
+
+META_ACCESS_TOKEN=
+IG_USER_ID=
+FACEBOOK_PAGE_ID=
+FACEBOOK_PAGE_ACCESS_TOKEN=
+
+MAX_DAILY_POSTS=3
+MIN_POST_INTERVAL_MINUTES=90
+POST_JITTER_MINUTES_MIN=5
+POST_JITTER_MINUTES_MAX=25
+```
+
+Never commit `.env` to Git.
+
+---
+
+## Quick Start
+
+1. Clone the repository.
+
+```bash
+git clone <repo-url>
+cd <repo-folder>
+```
+
+2. Create and activate a virtual environment.
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+```
+
+3. Install dependencies.
+
+```bash
 pip install -r requirements.txt
+```
+
+4. Create your environment file.
+
+```bash
+cp .env.example .env
+```
+
+5. Fill in the required API keys and account IDs in `.env`.
+
+6. Run the pipeline.
+
+```bash
+python3 main.py
+```
+
+---
+
+## Output Structure
+
+Generated files are stored under:
+
+```text
+outputs/YYYY-MM-DD/
+```
+
+Typical output files:
+
+```text
+gemini_selected_result.txt
+selected_news.txt
+selected_articles.txt
+instagram_captions.txt
+sdxl_image_prompts.txt
+generated_images.txt
+failed_categories.txt
+images/
+```
+
+Successful published articles are recorded in:
+
+```text
+history.jsonl
+```
+
+---
+
+## Publishing Flow
+
+Instagram publishing uses the official two-step Meta Graph API flow:
+
+1. Create a media container.
+2. Publish the media container.
+
+Facebook Page publishing uses the Page photos endpoint.
+
+Images must be publicly accessible before publishing. This project uploads final poster images to Cloudflare R2 and uses the public R2 URL for Meta publishing.
+
+---
+
+## Operational Guardrails
+
+The project includes basic operational controls:
+
+- `MAX_DAILY_POSTS`: limits the number of posts per day.
+- `MIN_POST_INTERVAL_MINUTES`: enforces spacing between posts.
+- `POST_JITTER_MINUTES_MIN` / `POST_JITTER_MINUTES_MAX`: adds randomized delay before publishing.
+- `history.jsonl`: prevents duplicate article/image publishing.
+- `outputs/`: keeps local generated files organized by date.
+
+Publishing is done through the official Meta Graph API. The project does not use browser automation or unofficial Instagram automation.
+
+---
+
+## Git Hygiene
+
+Do not commit secrets or generated outputs.
+
+Recommended ignored files:
+
+```gitignore
+.env
+venv/
+__pycache__/
+outputs/
+generated_images/
+*.txt
+history.jsonl
+history.txt
+```
+
+---
+
+## Roadmap
+
+Planned hardening work:
+
+- Long-lived Meta token refresh strategy
+- Deployment scheduling with cron, server runner, or CI/CD
+- Structured logging
+- Error reporting and alerting
+- Retry policy for external API failures
+- Human review step before publishing
+- Improved image quality control
+- Better post-run reporting
+
+---
+
+## Disclaimer
+
+This project is a functional automation prototype, not a fully hardened production system. Users are responsible for complying with news source copyright policies, API provider terms, and Meta platform rules.

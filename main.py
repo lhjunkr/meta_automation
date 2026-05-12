@@ -1,4 +1,5 @@
 import os
+import base64
 import requests
 import trafilatura
 import json
@@ -6,6 +7,12 @@ import shutil
 import boto3
 import random
 import time
+
+# pygooglenews still imports feedparser 5.x, which expects this Python 2-era alias.
+# Define it before pygooglenews imports feedparser so GitHub Actions can run on Python 3.11.
+if not hasattr(base64, "decodestring"):
+    base64.decodestring = base64.decodebytes
+
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types

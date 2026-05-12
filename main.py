@@ -1102,22 +1102,29 @@ def get_int_env(name, default):
         return int(os.getenv(name, str(default)))
     except ValueError:
         return default
+    
+def is_dry_run():
+    return os.getenv("DRY_RUN", "false").lower() == "true"
 
-# Step 14-7. 연속 게시를 피하기 위해 게시 순서별 대기 시간을 계산합니다.
+# Step 14-7. 오전 7~9시 사이에 10분 간격으로 게시되도록 대기 시간을 계산합니다.
 def get_publish_delay_seconds(publish_index):
-    min_interval_minutes = get_int_env("MIN_POST_INTERVAL_MINUTES", 90)
-    jitter_min_minutes = get_int_env("POST_JITTER_MINUTES_MIN", 5)
-    jitter_max_minutes = get_int_env("POST_JITTER_MINUTES_MAX", 25)
+    upload_window_minutes = get_int_env("UPLOAD_WINDOW_MINUTES", 120)
+    post_spacing_minutes = get_int_env("POST_SPACING_MINUTES", 10)
+    max_daily_posts = get_int_env("MAX_DAILY_POSTS", 3)
 
-    jitter_seconds = random.randint(
-        jitter_min_minutes * 60,
-        jitter_max_minutes * 60,
+    latest_first_post_minute = upload_window_minutes - (
+        (max_daily_posts - 1) * post_spacing_minutes
+    )
+    latest_first_post_minute = max(latest_first_post_minute, 0)
+
+    first_post_delay_seconds = random.randint(
+        0,
+        latest_first_post_minute * 60,
     )
 
-    if publish_index == 0:
-        return jitter_seconds
-
-    return (min_interval_minutes * 60) + jitter_seconds
+    return first_post_delay_seconds + (
+        publish_index * post_spacing_minutes * 60
+    )
 
 # Step 14-8. 오늘 이미 게시된 건수를 세어 일일 업로드 한도를 지킵니다.
 def count_today_published():
@@ -1353,9 +1360,13 @@ if __name__ == "__main__":
         save_selected_news(selected_articles, run_dir)
         save_selected_articles(selected_articles, run_dir)
 
-        # 생성된 콘텐츠를 실제 소셜 채널에 게시하고 성공한 기사만 history에 기록합니다.
-        published_articles = publish_to_social_channels(selected_articles)
-        handle_publish_success(published_articles)
+        if is_dry_run():
+            print("[DRY_RUN] 실제 인스타그램/페이스북 업로드를 건너뜁니다.")
+            published_articles = []
+        else:
+            published_articles = publish_to_social_channels(selected_articles)
+            handle_publish_success(published_articles)
+
 
         print("\n[완료] 오늘 콘텐츠 생성 파이프라인이 끝났습니다.")
         print(f"산출물 저장 위치: {run_dir}")

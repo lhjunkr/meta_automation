@@ -6,4 +6,4 @@ requests
 googlenewsdecoder
 huggingface_hub
 Pillow
-
+boto3

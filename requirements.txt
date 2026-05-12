@@ -1,7 +1,7 @@
 pygooglenews
 google-genai
 python-dotenv
-trafilatura
+trafilatura==1.12.2
 requests
 googlenewsdecoder
 huggingface_hub

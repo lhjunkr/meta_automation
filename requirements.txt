@@ -1,9 +1,10 @@
 pygooglenews
 google-genai
 python-dotenv
-trafilatura==1.12.2
+trafilatura
 requests
 googlenewsdecoder
 huggingface_hub
 Pillow
 boto3
+justext==3.0.1

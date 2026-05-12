@@ -77,3 +77,21 @@ jobs:
             echo "No history.jsonl file to commit"
           fi
 
+      - name: Send email report
+        if: always()
+        uses: dawidd6/action-send-mail@v6
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Meta Automation ${{ job.status }} - Run #${{ github.run_number }}"
+          to: ${{ secrets.REPORT_EMAIL_TO }}
+          from: Meta Automation <${{ secrets.SMTP_USERNAME }}>
+          body: |
+            Workflow: Daily Meta Automation
+            Status: ${{ job.status }}
+            Branch: ${{ github.ref_name }}
+            Run URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+

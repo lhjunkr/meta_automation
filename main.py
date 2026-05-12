@@ -612,17 +612,25 @@ def generate_huggingface_images(selected_articles, run_dir):
 # Step 9-3a. 포스터 텍스트 합성에 사용할 한글 폰트를 불러옵니다.
 def load_korean_font(size, bold=False):
     if bold:
-        font_path = "/System/Library/Fonts/Supplemental/AppleGothic.ttf"
+        font_paths = [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/Library/Fonts/NanumGothicBold.ttf",
+        ]
     else:
-        font_path = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+        font_paths = [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/Library/Fonts/NanumGothic.ttf",
+        ]
 
-    fallback_path = "/System/Library/Fonts/Supplemental/AppleGothic.ttf"
+    for font_path in font_paths:
+        try:
+            return ImageFont.truetype(font_path, size=size)
+        except OSError:
+            continue
 
-    try:
-        return ImageFont.truetype(font_path, size=size)
-    except OSError:
-        return ImageFont.truetype(fallback_path, size=size)
-
+    raise RuntimeError("사용 가능한 한글 폰트를 찾지 못했습니다.")
 
 # Step 9-3b. 제목 가독성을 위해 이미지 하단에 어두운 그라데이션을 입힙니다.
 def apply_bottom_gradient(image):

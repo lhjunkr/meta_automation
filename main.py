@@ -345,12 +345,12 @@ def fetch_article_body(resolved_link):
     try:
         body = trafilatura.extract(
             response.text,
-            url=resolved_url,
+            url=resolved_link,
             include_comments=False,
             include_tables=False,
         )
     except Exception as extraction_error:
-        print(f"본문 추출 실패: {resolved_url} ({extraction_error})")
+        print(f"본문 추출 실패: {resolved_link} ({extraction_error})")
         return "", "body_extract_failed"
 
     body = body or ""

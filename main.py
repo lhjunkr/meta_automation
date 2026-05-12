@@ -342,12 +342,16 @@ def fetch_article_body(resolved_link):
         print(f"본문 페이지 다운로드 실패: {resolved_link} ({e})")
         return "", "download_failed"
 
-    body = trafilatura.extract(
-        response.text,
-        url=resolved_link,
-        include_comments=False,
-        include_tables=False,
-    )
+    try:
+        body = trafilatura.extract(
+            response.text,
+            url=resolved_url,
+            include_comments=False,
+            include_tables=False,
+        )
+    except Exception as extraction_error:
+        print(f"본문 추출 실패: {resolved_url} ({extraction_error})")
+        return "", "body_extract_failed"
 
     body = body or ""
 

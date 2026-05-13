@@ -1,78 +1,121 @@
-# News-to-Social Automation Pipeline
+# Meta Automation
 
-### Google News → Gemini → SDXL → Cloudflare R2 → Meta Graph API
+Google News articles are collected, curated with Gemini, transformed into Korean Instagram/Facebook content, rendered as social poster images, uploaded to Cloudflare R2, and published through the Meta Graph API.
 
-A Python-based automation pipeline that transforms daily news into localized Instagram and Facebook content. The system collects news candidates, selects articles with Gemini, extracts article bodies, generates Korean captions, creates poster images, uploads final images to Cloudflare R2, and publishes through the official Meta Graph API.
+The production runner is GitHub Actions. It runs automatically every morning and can also be triggered manually from the Actions tab.
 
-> Current status: the main pipeline is implemented, Cloudflare R2 upload has been tested, and manual Instagram/Facebook posting through Meta Graph API has succeeded. Full production hardening such as token refresh, deployment scheduling, monitoring, and alerting is still pending.
+![Meta Automation Architecture](docs/architecture.jpeg)
 
----
+## Current Operation
 
-## System Logic
+| Item | Value |
+| --- | --- |
+| Workflow | `.github/workflows/daily-upload.yml` |
+| Runner | GitHub-hosted Ubuntu runner |
+| Schedule | `17 22 * * *` UTC, KST 07:17 |
+| Manual trigger | `workflow_dispatch` |
+| Python | 3.11 |
+| Publishing mode | `DRY_RUN=false` |
+| Daily post limit | `MAX_DAILY_POSTS=3` |
+| Upload window | `UPLOAD_WINDOW_MINUTES=30` |
+| Post spacing | `POST_SPACING_MINUTES=7` |
+| Report channel | Email via SMTP |
 
-The project is designed around four stages of social content production:
+## Pipeline
 
-1. **Discovery**: collect fresh news candidates.
-2. **Curation**: select relevant articles with Gemini.
-3. **Creation**: generate captions and poster images.
-4. **Distribution**: publish through official Meta APIs.
-
-The publishing flow avoids browser automation and uses the Meta Graph API for Instagram and Facebook posting.
-
----
-
-## Architecture & Workflow
-
-| Phase | Process | Technology |
+| Stage | Responsibility | Main Tools |
 | --- | --- | --- |
-| 1. Ingestion | Collect Google News candidates and deduplicate articles | `pygooglenews`, `history.jsonl` |
-| 2. Filtering | Exclude already-used links and configured news sources | `history.jsonl`, source keyword filters |
-| 3. Selection | Select primary/backup articles by category | `Google Gemini` |
-| 4. Extraction | Resolve Google News links and extract article body text | `googlenewsdecoder`, `requests`, `trafilatura` |
-| 5. Captioning | Generate Korean Instagram/Facebook captions | `Google Gemini` |
-| 6. Image Prompting | Generate SDXL image prompts | `Google Gemini` |
-| 7. Image Generation | Create poster images | `Hugging Face Inference API`, `SDXL` |
-| 8. Composition | Add Korean headline, source, date, and gradient overlay | `Pillow` |
-| 9. Hosting | Upload final images to public object storage | `Cloudflare R2`, `boto3` |
-| 10. Publishing | Publish to Instagram and Facebook | `Meta Graph API` |
-| 11. History | Record successful posts and clean old outputs | `history.jsonl`, `outputs/` |
+| News ingestion | Collect Google News candidates and remove already-seen links | `pygooglenews`, `history.jsonl` |
+| Filtering | Remove excluded sources and duplicate candidates | Source keyword filters |
+| Article selection | Pick primary and backup article IDs per category | Gemini |
+| URL resolution | Decode Google News RSS URLs to original publisher URLs | `googlenewsdecoder` |
+| Body extraction | Download article pages and extract readable text | `requests`, `trafilatura` |
+| Caption generation | Generate Korean Instagram/Facebook post text | Gemini |
+| Image prompt generation | Convert caption context into an SDXL prompt | Gemini |
+| Image generation | Generate vertical editorial images | Hugging Face Inference API, SDXL |
+| Poster rendering | Add gradient, Korean title, source, and date | Pillow, Noto CJK |
+| Image hosting | Upload final poster image and create public URL | Cloudflare R2, `boto3` |
+| Publishing | Publish to Instagram and Facebook | Meta Graph API |
+| History | Record successful posts and prevent duplicates | `history.jsonl` |
+| Reporting | Send success/failure run summary | SMTP |
 
----
+## Architecture Notes
 
-## Tech Stack
+The system is intentionally built as a single scheduled batch pipeline:
 
-- Python 3.10+
-- Google Gemini API
-- Hugging Face Inference API
-- Stable Diffusion XL
-- Cloudflare R2
-- Meta Graph API
-- `pygooglenews`
-- `googlenewsdecoder`
-- `requests`
-- `trafilatura`
-- `Pillow`
-- `boto3`
-- `python-dotenv`
+1. GitHub Actions prepares Python, fonts, dependencies, and `.env` values from GitHub Secrets.
+2. `main.py` collects and filters candidate news.
+3. Gemini selects one primary and one backup article for each category.
+4. Each selected article goes through URL resolution, body extraction, caption generation, image prompt generation, image generation, poster rendering, and R2 upload.
+5. If a primary article fails content checks, the backup article for the same category is processed.
+6. Only articles with a valid `public_image_url` are eligible for publishing.
+7. Published articles are appended to `history.jsonl`.
+8. GitHub Actions commits `history.jsonl` back to `main`.
+9. A success or failure email is sent after every run.
 
----
+## Required GitHub Secrets
 
-## Requirements
+Add these in `Settings > Secrets and variables > Actions`.
 
-You need accounts and credentials for:
+### Gemini and Hugging Face
 
-- Google Gemini API
-- Hugging Face
-- Cloudflare R2
-- Meta Developer App
-- Instagram Professional account
-- Facebook Page connected to the Instagram account
+```text
+GEMINI_API_KEY
+HF_TOKEN
+```
 
----
+### Cloudflare R2
 
-## Environment Variables
+```text
+R2_ACCOUNT_ID
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+R2_BUCKET_NAME
+R2_PUBLIC_BASE_URL
+```
 
-Create a `.env` file from `.env.example`.
+### Meta / Instagram / Facebook
+
+```text
+META_ACCESS_TOKEN
+IG_USER_ID
+FACEBOOK_PAGE_ID
+FACEBOOK_PAGE_ACCESS_TOKEN
+```
+
+`META_ACCESS_TOKEN` should be a long-lived user token. `FACEBOOK_PAGE_ACCESS_TOKEN` should be generated from that long-lived token with `/me/accounts?fields=name,id,access_token`.
+
+### Email Report
+
+```text
+SMTP_HOST
+SMTP_PORT
+SMTP_USERNAME
+SMTP_PASSWORD
+REPORT_EMAIL_TO
+```
+
+For Gmail SMTP:
+
+```text
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=<sender-gmail-address>
+SMTP_PASSWORD=<gmail-app-password>
+REPORT_EMAIL_TO=<recipient-email-address>
+```
+
+## Local Development
+
+Create a virtual environment and install dependencies.
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Create a local `.env` file when running outside GitHub Actions.
 
 ```env
 GEMINI_API_KEY=
@@ -90,62 +133,31 @@ FACEBOOK_PAGE_ID=
 FACEBOOK_PAGE_ACCESS_TOKEN=
 
 MAX_DAILY_POSTS=3
-MIN_POST_INTERVAL_MINUTES=90
-POST_JITTER_MINUTES_MIN=5
-POST_JITTER_MINUTES_MAX=25
+UPLOAD_WINDOW_MINUTES=30
+POST_SPACING_MINUTES=7
 ```
 
-Never commit `.env` to Git.
-
----
-
-## Quick Start
-
-1. Clone the repository.
-
-```bash
-git clone <repo-url>
-cd <repo-folder>
-```
-
-2. Create and activate a virtual environment.
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-3. Install dependencies.
-
-```bash
-pip install -r requirements.txt
-```
-
-4. Create your environment file.
-
-```bash
-cp .env.example .env
-```
-
-5. Fill in the required API keys and account IDs in `.env`.
-
-6. Run the pipeline.
+Run locally:
 
 ```bash
 python3 main.py
 ```
 
----
+Validate syntax before pushing changes:
 
-## Output Structure
+```bash
+python3 -m py_compile main.py
+```
 
-Generated files are stored under:
+## Outputs
+
+Every run writes generated assets under:
 
 ```text
 outputs/YYYY-MM-DD/
 ```
 
-Typical output files:
+Typical files:
 
 ```text
 gemini_selected_result.txt
@@ -158,75 +170,90 @@ failed_categories.txt
 images/
 ```
 
-Successful published articles are recorded in:
+GitHub Actions uploads `outputs/` as an artifact even if a later step fails.
+
+Successful posts are recorded in:
 
 ```text
 history.jsonl
 ```
 
----
+`history.jsonl` is force-added by the workflow because local ignore rules may exclude generated runtime files, but production needs this file committed to prevent duplicate posting.
 
-## Publishing Flow
+## Publishing Rules
 
-Instagram publishing uses the official two-step Meta Graph API flow:
+An article is publishable only when all required content stages succeed:
 
-1. Create a media container.
-2. Publish the media container.
+- article body extraction
+- Gemini caption generation
+- SDXL image prompt generation
+- Hugging Face image generation
+- poster overlay rendering
+- Cloudflare R2 upload
+- `public_image_url` creation
 
-Facebook Page publishing uses the Page photos endpoint.
+If any primary article fails these checks, the backup article for the same category is processed. If both fail, the category is written to `failed_categories.txt`.
 
-Images must be publicly accessible before publishing. This project uploads final poster images to Cloudflare R2 and uses the public R2 URL for Meta publishing.
+## Operational Notes
 
----
+- The laptop does not need to be powered on. Runs happen on GitHub-hosted runners.
+- Meta tokens are not permanent. If logs show `OAuthException`, `code 190`, or `Session has expired`, regenerate the long-lived user token and page token.
+- Some publishers return `401` or `403` to automated article downloads. Those articles may fail body extraction and trigger backup processing.
+- `trafilatura` can fail on specific HTML structures. The pipeline treats extraction failures as article-level failures rather than stopping the entire run.
+- If fewer than 3 posts are published, inspect the run artifact files, especially `selected_articles.txt`, `generated_images.txt`, and `failed_categories.txt`.
+- If `git push` is rejected after a workflow run, pull the latest `history.jsonl` commit first:
 
-## Operational Guardrails
-
-The project includes basic operational controls:
-
-- `MAX_DAILY_POSTS`: limits the number of posts per day.
-- `MIN_POST_INTERVAL_MINUTES`: enforces spacing between posts.
-- `POST_JITTER_MINUTES_MIN` / `POST_JITTER_MINUTES_MAX`: adds randomized delay before publishing.
-- `history.jsonl`: prevents duplicate article/image publishing.
-- `outputs/`: keeps local generated files organized by date.
-
-Publishing is done through the official Meta Graph API. The project does not use browser automation or unofficial Instagram automation.
-
----
-
-## Git Hygiene
-
-Do not commit secrets or generated outputs.
-
-Recommended ignored files:
-
-```gitignore
-.env
-venv/
-__pycache__/
-outputs/
-generated_images/
-*.txt
-history.jsonl
-history.txt
+```bash
+git pull --rebase origin main
+git push origin main
 ```
 
----
+## Common Commands
 
-## Roadmap
+Check local state:
 
-Planned hardening work:
+```bash
+git status --short --branch
+```
 
-- Long-lived Meta token refresh strategy
-- Deployment scheduling with cron, server runner, or CI/CD
-- Structured logging
-- Error reporting and alerting
-- Retry policy for external API failures
-- Human review step before publishing
-- Improved image quality control
-- Better post-run reporting
+Commit workflow changes:
 
----
+```bash
+git add .github/workflows/daily-upload.yml
+git commit -m "예약 실행 설정 조정"
+git push origin main
+```
 
-## Disclaimer
+Commit pipeline changes:
 
-This project is a functional automation prototype, not a fully hardened production system. Users are responsible for complying with news source copyright policies, API provider terms, and Meta platform rules.
+```bash
+git add main.py
+git commit -m "인스타 게시글 생성 프롬프트 개선"
+git push origin main
+```
+
+Commit documentation changes:
+
+```bash
+git add README.md docs/architecture.jpeg
+git commit -m "README 아키텍처 문서 추가"
+git push origin main
+```
+
+## Safety
+
+Never commit secrets:
+
+```text
+.env
+```
+
+The project uses official APIs instead of browser automation:
+
+- Google Gemini API
+- Hugging Face Inference API
+- Cloudflare R2 S3-compatible API
+- Meta Graph API
+- SMTP
+
+Users are responsible for complying with publisher policies, API provider terms, Meta Platform rules, and copyright requirements.

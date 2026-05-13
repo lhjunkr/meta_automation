@@ -7,6 +7,7 @@ import shutil
 import boto3
 import random
 import time
+import re
 
 # pygooglenews still imports feedparser 5.x, which expects this Python 2-era alias.
 # Define it before pygooglenews imports feedparser so GitHub Actions can run on Python 3.11.
@@ -689,9 +690,20 @@ def wrap_text(draw, text, font, max_width, max_lines=2):
 
 # Step 9-3e. 기사 제목 뒤의 언론사 표기를 제거해 백업 제목을 만듭니다.
 def clean_article_title(title):
-    if " - " in title:
-        return title.rsplit(" - ", 1)[0]
-    return title
+    cleaned_title = title
+
+    for breaking_news_prefix in ["[속보]", "【속보】", "(속보)", "속보"]:
+        cleaned_title = cleaned_title.replace(breaking_news_prefix, "")
+
+    for unwanted_character in ["▯", "□", "☒", "×"]:
+        cleaned_title = cleaned_title.replace(unwanted_character, "")
+
+    cleaned_title = re.sub(r"\s+", " ", cleaned_title).strip()
+
+    if " - " in cleaned_title:
+        cleaned_title = cleaned_title.rsplit(" - ", 1)[0]
+
+    return cleaned_title.strip()
 
 # Step 9-3f. 포스터에는 캡션 첫 줄을 우선 사용하고 없으면 기사 제목을 사용합니다.
 def extract_poster_title(article):
@@ -700,7 +712,7 @@ def extract_poster_title(article):
     for line in caption.splitlines():
         line = line.strip()
         if line:
-            return line
+            return clean_article_title(line)
 
     return clean_article_title(article.get("title", ""))
 
@@ -722,22 +734,16 @@ def render_news_image_overlay(article):
     image = apply_bottom_gradient(image)
     draw = ImageDraw.Draw(image)
 
-    label_font = load_korean_font(45, bold=True)
     title_font = load_korean_font(55, bold=True)
     footer_font = load_korean_font(35)
 
     x = 75
-    label_y = 900
-    title_y = 970
+    title_y = 900
     footer_y = 1140
     max_width = image.size[0] - (x * 2)
 
-    label = "[속보]"
     title = extract_poster_title(article)
     footer = f"출처: {article.get('source', '')} | {datetime.now().strftime('%Y.%m.%d')}"
-
-    for dx, dy in [(0, 0), (1, 0), (0, 1), (1, 1)]:
-        draw.text((x + dx, label_y + dy), label, fill="#FFFFFF", font=label_font)
 
     title_lines = wrap_text(draw, title, title_font, max_width=max_width, max_lines=2)
     for idx, line in enumerate(title_lines):

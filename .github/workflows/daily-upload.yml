@@ -3,7 +3,7 @@ name: Daily Meta Automation
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 22 * * *" # KST 07:00
+    - cron: "17 22 * * *" # KST 07:17
 
 jobs:
   run-meta-automation:

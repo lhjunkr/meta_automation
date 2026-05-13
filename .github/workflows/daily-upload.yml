@@ -70,7 +70,7 @@ jobs:
           git config user.email "github-actions@github.com"
 
           if [ -f history.jsonl ]; then
-            git add history.jsonl
+            git add -f history.jsonl
             git commit -m "Update publish history" || echo "No history changes"
             git push
           else

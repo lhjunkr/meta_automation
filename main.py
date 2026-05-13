@@ -199,33 +199,80 @@ def select_best_articles(news_list):
 
     news_context = build_news_context(news_list)
 
-    prompt = f"""**Role:** Senior Strategic News Analyst & Professional Curator.
+    prompt = f"""**Role:** Senior Strategic News Analyst & Professional News Curator.
 
-**Objective:** From the provided list of 30 news articles, identify and select the single most impactful "Best" article from each category. Your goal is to provide high-value intelligence that a COO would find indispensable.
+**Objective:** From the provided list of 30 news articles, select the most valuable articles for a Korean Instagram news account. Your goal is to identify stories that are timely, important, and likely to matter to Korean readers and business decision-makers.
+
+**Important Context:**
+- The final Instagram post will be written in Korean.
+- Prefer articles that can be clearly explained to a general Korean audience.
+- Avoid articles that are too niche, too speculative, or unlikely to produce a useful Korean summary.
+- Avoid duplicate stories or articles that cover nearly the same event.
 
 **Strict Selection Criteria (Priority-based):**
-1. [종합(KR)]: Choose the article with the highest social urgency or national importance. Prioritize breaking news that affects the general public.
-2. [경제(KR)]: Choose the article that signals a major shift in the Korean market. Prioritize macro-economic data (interest rates, inflation) or game-changing moves by top-tier conglomerates (Samsung, SK, Hyundai, etc.).
-3. [경제(US)]: Choose the article with global repercussions. Prioritize Federal Reserve policy shifts, AI/Big Tech disruptions, or critical changes in the global supply chain.
 
-**Selection Logic:**
-- If multiple articles meet the criteria, select the one that is most "actionable" or "insightful" for business strategy.
-- Return exactly two selected article IDs for each category.
+1. [종합(KR)]
+Choose the article with the highest national importance or public urgency in Korea.
+Prioritize:
+- major government, legal, diplomatic, safety, public health, or social issues
+- breaking events that affect many people
+- stories with clear facts and broad public relevance
+
+Avoid:
+- minor political remarks
+- celebrity/entertainment news
+- highly sensational stories with little strategic value
+
+2. [경제(KR)]
+Choose the article that signals a meaningful shift in the Korean economy or market.
+Prioritize:
+- interest rates, inflation, exchange rates, real estate, household debt
+- major policy changes affecting businesses or consumers
+- important moves by Samsung, SK, Hyundai, LG, Naver, Kakao, or other top-tier Korean companies
+- supply chain, semiconductor, AI, energy, or export-related developments
+
+Avoid:
+- small company announcements
+- promotional business articles
+- narrow stock-price-only stories without broader implications
+
+3. [경제(US)]
+Choose the article with the strongest global or Korean market implications.
+Prioritize:
+- Federal Reserve, inflation, employment, Treasury yields, dollar, oil, or trade policy
+- AI, Big Tech, chips, cloud, cybersecurity, or global supply chain shifts
+- events likely to affect Korean markets, exporters, investors, or strategic planning
+
+Avoid:
+- local US-only stories
+- opinion pieces without clear facts
+- articles blocked behind paywalls when a similar accessible story exists
+
+**Backup Selection Rules:**
+- Select exactly two article IDs for each category.
 - The first ID is the primary choice.
 - The second ID is the backup choice if the primary article fails during processing.
-- Do not return title, source, link, summary, or commentary.
-- You must select two IDs from each category: 종합(KR), 경제(KR), 경제(US).
+- The backup must be a genuinely different story, not a duplicate of the primary.
+- Prefer backup articles with accessible source pages and clear factual content.
+- If one article has a stronger headline but likely weak article body access, choose a more accessible article as backup.
+
+**Quality Rules:**
+- Do not invent or infer facts beyond the provided list.
+- Do not choose an article only because the headline is sensational.
+- Prefer articles that can support a clear, concise Korean Instagram caption.
+- Do not return title, source, link, summary, explanation, or commentary.
+- Return only the machine-parsable output format below.
 
 **Output Format (Strictly for machine parsing):**
-Category: [Category Name]
+Category: 종합(KR)
 Primary ID: [Article ID]
 Backup ID: [Article ID]
 
-Category: [Category Name]
+Category: 경제(KR)
 Primary ID: [Article ID]
 Backup ID: [Article ID]
 
-Category: [Category Name]
+Category: 경제(US)
 Primary ID: [Article ID]
 Backup ID: [Article ID]
 
@@ -383,28 +430,53 @@ def fetch_selected_article_bodies(selected_articles):
 
 # Step 7-1. 기사 본문을 인스타 캡션으로 바꾸기 위한 Gemini 프롬프트를 만듭니다.
 def build_instagram_caption_prompt(article):
-    return f"""[Persona]
-You are a professional Instagram News Curator. Your goal is to rewrite complex news into a viral, human-centric post.
+    return f"""**Role:** Professional Korean Social Media News Editor.
 
-[Input Data]
-- Title: {article['title']}
-- Source: {article['source']}
-- Body: {article['body']}
+You are an Instagram news editor who explains complex news in Korean within 10 seconds.
+Your priorities are factual accuracy, clarity, polite Korean tone, and mobile readability.
 
-[Task: Instagram Caption (KOREAN ONLY)]
-Write a high-engagement Instagram caption based on the input data.
-1. Headline: Start with "[속보]" followed by a punchy, click-worthy headline.
-2. Hook: A catchy opening sentence to stop the scroll.
-3. Summary: 3 clear, punchy bullet points using 📍 or ✅. (Facts only, no hallucinations).
-4. Context: A friendly explanation of why this news is important to the reader.
-5. Tone: Use natural K-Instagram endings like "~하네요!", "~입니다", or "대박이죠?". Strictly avoid "AI-ish" connectors like "따라서", "결론적으로".
-6. Source: "출처: {article['source']}"
-7. Hashtags: Exactly 4 relevant hashtags.
+**Task:**
+Write an Instagram post caption in Korean based only on the selected article content provided below.
 
-[Output Format]
+**Critical Constraints:**
+1. Write the final output in Korean.
+2. Use polite Korean speech style only. End sentences naturally with forms such as "~입니다", "~습니다", "~됩니다", "~입니다."
+3. Do not use casual speech, 반말, slang, exaggerated expressions, or overly familiar phrases such as "대박이죠?", "같이 지켜봐야겠어요", "정신 없었죠?"
+4. Do not invent numbers, dates, names, causes, or forecasts that are not in the article.
+5. Do not use prefixes such as [속보], 속보], 속보, or breaking news labels.
+6. Avoid exaggerated fear marketing, overexcited tone, and clickbait.
+7. Use short sentences and clear paragraph spacing for mobile readability.
+8. Use at most 3 bullet points.
+9. Keep the entire caption under 500 Korean characters.
+10. Do not use Markdown bold syntax such as **text**.
+11. Do not include broken symbols, checkbox-like characters, or decorative marks.
+12. If the article body is weak or incomplete, rely only on confirmed title/source facts and keep the caption conservative.
+
+**Output Format:**
 ===KOREAN_CAPTION===
-(Your caption here)"""
+🚨 [One-line Korean summary]
 
+📍 무슨 일이 있었나
+- [One confirmed key event from the article]
+- [Important number, organization, or concrete fact if available]
+
+🔎 왜 중요한가
+- [Why this matters to readers, markets, policy, companies, or daily life]
+
+💡 한 줄 정리
+[One concise, non-exaggerated takeaway]
+
+#뉴스요약 #[기사카테고리] #이슈 #경제뉴스 #정보공유
+
+**Hashtag Rule:**
+Replace #[기사카테고리] with one actual Korean category hashtag.
+Examples: #경제, #국제, #정치, #기술, #사회
+
+**Selected Article Content:**
+- Title: {article['title']}
+- Category: {article['category']}
+- Source: {article['source']}
+- Body: {article['body']}"""
 
 # Step 7-1a. Gemini 응답에서 실제 캡션 영역만 분리합니다.
 def parse_instagram_caption(raw_text):

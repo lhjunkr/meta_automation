@@ -12,13 +12,13 @@ The production runner is GitHub Actions. It runs automatically every morning and
 | --- | --- |
 | Workflow | `.github/workflows/daily-upload.yml` |
 | Runner | GitHub-hosted Ubuntu runner |
-| Schedule | `17 22 * * *` UTC, KST 07:17 |
+| Schedule | `23 21 * * *` UTC, KST 06:23 |
 | Manual trigger | `workflow_dispatch` |
 | Python | 3.11 |
 | Publishing mode | `DRY_RUN=false` |
 | Daily post limit | `MAX_DAILY_POSTS=3` |
-| Upload window | `UPLOAD_WINDOW_MINUTES=30` |
-| Post spacing | `POST_SPACING_MINUTES=7` |
+| Upload window | `UPLOAD_WINDOW_MINUTES=15` |
+| Post spacing | `POST_SPACING_MINUTES=5` |
 | Report channel | Email via SMTP |
 
 ## Pipeline
@@ -83,7 +83,7 @@ FACEBOOK_PAGE_ID
 FACEBOOK_PAGE_ACCESS_TOKEN
 ```
 
-`META_ACCESS_TOKEN` should be a long-lived user token. `FACEBOOK_PAGE_ACCESS_TOKEN` should be generated from that long-lived token with `/me/accounts?fields=name,id,access_token`.
+`META_ACCESS_TOKEN` and `FACEBOOK_PAGE_ACCESS_TOKEN` should use the production System User token generated in Meta Business Settings. `FACEBOOK_PAGE_ID` is the `Newscoo` page ID from `/me/accounts`, and `IG_USER_ID` is the linked `instagram_business_account.id`.
 
 ### Email Report
 
@@ -133,8 +133,8 @@ FACEBOOK_PAGE_ID=
 FACEBOOK_PAGE_ACCESS_TOKEN=
 
 MAX_DAILY_POSTS=3
-UPLOAD_WINDOW_MINUTES=30
-POST_SPACING_MINUTES=7
+UPLOAD_WINDOW_MINUTES=15
+POST_SPACING_MINUTES=5
 ```
 
 Run locally:
@@ -197,7 +197,7 @@ If any primary article fails these checks, the backup article for the same categ
 ## Operational Notes
 
 - The laptop does not need to be powered on. Runs happen on GitHub-hosted runners.
-- Meta tokens are not permanent. If logs show `OAuthException`, `code 190`, or `Session has expired`, regenerate the long-lived user token and page token.
+- Meta publishing uses a Meta Business System User token. If logs show `OAuthException`, `code 190`, or `Session has expired`, validate the System User token, assigned Page/Instagram assets, and GitHub Secrets before regenerating the token.
 - Some publishers return `401` or `403` to automated article downloads. Those articles may fail body extraction and trigger backup processing.
 - `trafilatura` can fail on specific HTML structures. The pipeline treats extraction failures as article-level failures rather than stopping the entire run.
 - If fewer than 3 posts are published, inspect the run artifact files, especially `selected_articles.txt`, `generated_images.txt`, and `failed_categories.txt`.

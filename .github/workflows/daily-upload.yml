@@ -50,8 +50,8 @@ jobs:
           echo "FACEBOOK_PAGE_ID=${{ secrets.FACEBOOK_PAGE_ID }}" >> .env
           echo "FACEBOOK_PAGE_ACCESS_TOKEN=${{ secrets.FACEBOOK_PAGE_ACCESS_TOKEN }}" >> .env
           echo "MAX_DAILY_POSTS=3" >> .env
-          echo "UPLOAD_WINDOW_MINUTES=30" >> .env
-          echo "POST_SPACING_MINUTES=7" >> .env
+          echo "UPLOAD_WINDOW_MINUTES=0" >> .env
+          echo "POST_SPACING_MINUTES=0" >> .env
 
       - name: Run automation
         run: python main.py

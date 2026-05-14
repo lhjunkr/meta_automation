@@ -129,8 +129,8 @@ def render_news_image_overlay(article):
     footer_font = load_korean_font(35)
 
     x = 75
-    title_y = 900
-    footer_y = 1140
+    title_y = 950
+    footer_y = 1165
     max_width = image.size[0] - (x * 2)
 
     title = extract_poster_title(article)

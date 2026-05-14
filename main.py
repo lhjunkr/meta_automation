@@ -658,7 +658,7 @@ def generate_huggingface_image(article, run_dir):
             "text, watermark, logo, low quality, blurry, distorted face, "
             "extra fingers, oversaturated, artificial glow"
         ),
-        model="stabilityai/stable-diffusion-xl-base-1.0",
+        model="stabilityai/stable-diffusion-3.5-large",
         width=1024,
         height=1280,
         num_inference_steps=30,

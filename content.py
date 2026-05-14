@@ -280,21 +280,6 @@ def generate_instagram_captions(selected_articles):
 
     return selected_articles
 
-
-# Step 7-4. 생성된 인스타 캡션을 별도 텍스트 파일로 저장합니다.
-def save_instagram_captions(selected_articles, run_dir):
-    with open(run_dir / "instagram_captions.txt", "w", encoding="utf-8") as f:
-        for article in selected_articles:
-            f.write(f"ID: {article['id']}\n")
-            f.write(f"Category: {article['category']}\n")
-            f.write(f"Title: {article['title']}\n")
-            f.write(f"Source: {article['source']}\n")
-            f.write(f"Status: {article.get('instagram_caption_status', '')}\n")
-            f.write("Instagram Caption:\n")
-            f.write(article.get("instagram_caption", ""))
-            f.write("\n\n---\n\n")
-
-
 # Step 8-1. 인스타 캡션을 기반으로 SDXL 이미지 생성 프롬프트를 만듭니다.
 def build_sdxl_image_prompt(article):
     step1_output = article.get("instagram_caption", "")

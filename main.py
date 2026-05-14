@@ -24,6 +24,7 @@ from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 from huggingface_hub import InferenceClient
 from botocore.exceptions import ClientError
+from config import get_int_env, is_dry_run
 
 # 전체 파이프라인 개요
 # 1. Google News 후보를 수집하고 history.jsonl 기준으로 이미 사용한 기사를 제외합니다.
@@ -1190,18 +1191,6 @@ def publish_article_to_facebook_page(article):
         print(f" -> Facebook 게시 실패: {e}")
 
     return article
-
-# Step 14-6. 게시 운영값을 .env에서 정수로 읽고 잘못된 값이면 기본값을 사용합니다.
-def get_int_env(name, default):
-    load_dotenv()
-
-    try:
-        return int(os.getenv(name, str(default)))
-    except ValueError:
-        return default
-    
-def is_dry_run():
-    return os.getenv("DRY_RUN", "false").lower() == "true"
 
 # Step 14-7. 오전 7~9시 사이에 10분 간격으로 게시되도록 대기 시간을 계산합니다.
 def get_publish_delay_seconds(publish_index):

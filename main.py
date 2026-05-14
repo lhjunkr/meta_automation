@@ -25,6 +25,7 @@ from PIL import Image, ImageDraw, ImageFont
 from huggingface_hub import InferenceClient
 from botocore.exceptions import ClientError
 from config import get_int_env, is_dry_run
+from history import append_publish_history, count_today_published, is_already_published
 
 # 전체 파이프라인 개요
 # 1. Google News 후보를 수집하고 history.jsonl 기준으로 이미 사용한 기사를 제외합니다.
@@ -1004,27 +1005,6 @@ def save_selected_articles(selected_articles, run_dir):
 
             f.write("\n\n---\n\n")
 
-
-# Step 13-1. 게시 완료 기사를 history.jsonl에 누적 기록해 다음 실행에서 제외합니다.
-def append_publish_history(selected_articles, status="ready"):
-    published_at = datetime.now().isoformat(timespec="seconds")
-
-    with open("history.jsonl", "a", encoding="utf-8") as f:
-        for article in selected_articles:
-            record = {
-                "published_at": published_at,
-                "status": status,
-                "category": article.get("category", ""),
-                "title": article.get("title", ""),
-                "source": article.get("source", ""),
-                "google_link": article.get("google_link", ""),
-                "resolved_link": article.get("resolved_link", ""),
-                "instagram_post_id": article.get("instagram_post_id", ""),
-                "final_image_path": article.get("final_image_path", ""),
-            }
-
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-
 # Step 13-2. outputs 폴더에서 보관 기간이 지난 실행 결과를 삭제합니다.
 def cleanup_old_outputs(keep_days=3):
     outputs_dir = Path("outputs")
@@ -1211,79 +1191,6 @@ def get_publish_delay_seconds(publish_index):
     return first_post_delay_seconds + (
         publish_index * post_spacing_minutes * 60
     )
-
-# Step 14-8. 오늘 이미 게시된 건수를 세어 일일 업로드 한도를 지킵니다.
-def count_today_published():
-    history_path = Path("history.jsonl")
-
-    if not history_path.exists():
-        return 0
-
-    today = datetime.now().date()
-    count = 0
-
-    with open(history_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-
-            if not line:
-                continue
-
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            if record.get("status") != "published":
-                continue
-
-            published_at = record.get("published_at", "")
-
-            try:
-                published_date = datetime.fromisoformat(published_at).date()
-            except ValueError:
-                continue
-
-            if published_date == today:
-                count += 1
-
-    return count
-
-
-# Step 14-9. 같은 기사 또는 같은 이미지가 이미 게시됐는지 history.jsonl에서 확인합니다.
-def is_already_published(article):
-    history_path = Path("history.jsonl")
-
-    if not history_path.exists():
-        return False
-
-    current_google_link = article.get("google_link", "")
-    current_resolved_link = article.get("resolved_link", "")
-    current_public_image_url = article.get("public_image_url", "")
-
-    with open(history_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-
-            if not line:
-                continue
-
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            if current_google_link and current_google_link == record.get("google_link"):
-                return True
-
-            if current_resolved_link and current_resolved_link == record.get("resolved_link"):
-                return True
-
-            if current_public_image_url and current_public_image_url == record.get("public_image_url"):
-                return True
-
-    return False
-
 
 # Step 14-10. 일일 한도와 중복 여부를 확인한 뒤 Instagram/Facebook에 순차 게시합니다.
 def publish_to_social_channels(selected_articles):

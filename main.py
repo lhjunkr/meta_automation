@@ -44,91 +44,13 @@ from outputs import (
     save_generated_images,
     save_selected_news,
     save_selected_articles,
-    cleanup_old_outputs,
 )
-from news import fetch_top_news, resolve_selected_article_links, fetch_selected_article_bodies
-
-# Step 10-1. 본문, 캡션, 이미지, R2 업로드까지 성공했는지 검사합니다.
-def is_article_complete(article):
-    return (
-        article.get("status") == "success"
-        and article.get("instagram_caption_status") == "success"
-        and article.get("sdxl_image_prompt_status") == "success"
-        and article.get("image_generation_status") == "success"
-        and article.get("image_overlay_status") == "success"
-        and article.get("r2_upload_status") == "success"
-        and bool(article.get("final_image_path"))
-        and bool(article.get("public_image_url"))
-    )
-
-# Step 10-2. 선택 기사에 대해 본문 수집부터 R2 업로드까지 콘텐츠 생성 흐름을 실행합니다.
-def process_content_pipeline(selected_articles, run_dir):
-    selected_articles = resolve_selected_article_links(selected_articles)
-    selected_articles = fetch_selected_article_bodies(selected_articles)
-
-    selected_articles = generate_instagram_captions(selected_articles)
-    save_instagram_captions(selected_articles, run_dir)
-
-    selected_articles = generate_sdxl_image_prompts(selected_articles)
-    save_sdxl_image_prompts(selected_articles, run_dir)
-
-    selected_articles = generate_huggingface_images(selected_articles, run_dir)
-    selected_articles = render_news_image_overlays(selected_articles)
-    selected_articles = upload_article_images_to_r2(selected_articles, run_dir)
-    save_generated_images(selected_articles, run_dir)
-
-    return selected_articles
-
-# Step 10-3. 1순위 기사 처리 실패 시 같은 카테고리의 2순위 기사로 재시도합니다.
-def retry_failed_categories_with_backup(selected_articles, run_dir):
-    final_articles = []
-    failed_categories = []
-
-    for article in selected_articles:
-        if is_article_complete(article):
-            final_articles.append(article)
-            continue
-
-        backup_article = article.get("backup_article")
-
-        if not backup_article:
-            failed_categories.append(
-                {
-                    "category": article.get("category", ""),
-                    "primary_id": article.get("id", ""),
-                    "backup_id": "",
-                    "reason": "primary_failed_no_backup",
-                }
-            )
-            continue
-
-        print(f"1순위 실패, 2순위 기사로 재시도: {article['category']}")
-
-        backup_article["selection_rank"] = "backup"
-        backup_article["backup_article"] = None
-
-        processed_backup = process_content_pipeline([backup_article], run_dir)[0]
-
-        if is_article_complete(processed_backup):
-            final_articles.append(processed_backup)
-        else:
-            failed_categories.append(
-                {
-                    "category": article.get("category", ""),
-                    "primary_id": article.get("id", ""),
-                    "backup_id": backup_article.get("id", ""),
-                    "reason": "primary_and_backup_failed",
-                }
-            )
-
-    save_failed_categories(failed_categories, run_dir)
-
-    return final_articles
-
-# Step 13-3. 소셜 업로드 성공 후 history 기록과 오래된 outputs 정리를 수행합니다.
-def handle_publish_success(published_articles):
-    append_publish_history(published_articles, status="published")
-    cleanup_old_outputs(keep_days=3)
+from news import fetch_top_news
+from pipeline import (
+    process_content_pipeline,
+    retry_failed_categories_with_backup,
+    handle_publish_success,
+)
 
 # Main. 전체 콘텐츠 생성 파이프라인을 실행합니다.
 if __name__ == "__main__":

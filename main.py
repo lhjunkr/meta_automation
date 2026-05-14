@@ -33,6 +33,7 @@ from content import (
     generate_instagram_captions,
     generate_sdxl_image_prompts,
 )
+from image_generation import generate_huggingface_images
 
 # 전체 파이프라인 개요
 # 1. Google News 후보를 수집하고 history.jsonl 기준으로 이미 사용한 기사를 제외합니다.
@@ -270,55 +271,6 @@ def save_sdxl_image_prompts(selected_articles, run_dir):
             f.write("SDXL Image Prompt:\n")
             f.write(article.get("sdxl_image_prompt", ""))
             f.write("\n\n---\n\n")
-
-
-# Step 9-1. SDXL 프롬프트로 Hugging Face 이미지를 생성해 로컬에 저장합니다.
-def generate_huggingface_image(article, run_dir):
-    load_dotenv()
-
-    hf_token = os.getenv("HF_TOKEN")
-    if not hf_token:
-        raise RuntimeError(".env 파일에 HF_TOKEN을 먼저 입력하세요.")
-
-    if not article.get("sdxl_image_prompt"):
-        article["image_path"] = ""
-        article["image_generation_status"] = "skipped_no_sdxl_prompt"
-        return article
-
-    output_dir = run_dir / "images"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    image_path = output_dir / f"article_{article['id']}.png"
-
-    client = InferenceClient(token=hf_token)
-
-    image = client.text_to_image(
-        prompt=article["sdxl_image_prompt"],
-        negative_prompt=(
-            "text, watermark, logo, low quality, blurry, distorted face, "
-            "extra fingers, oversaturated, artificial glow"
-        ),
-        model="stabilityai/stable-diffusion-3.5-large",
-        width=1024,
-        height=1280,
-        num_inference_steps=30,
-        guidance_scale=7.5,
-    )
-
-    image.save(image_path)
-
-    article["image_path"] = str(image_path)
-    article["image_generation_status"] = "success"
-
-    return article
-
-
-# Step 9-2. 선택된 기사 전체에 대해 포스터 원본 이미지를 순차 생성합니다.
-def generate_huggingface_images(selected_articles, run_dir):
-    for article in selected_articles:
-        print(f"Hugging Face 이미지 생성 중: {article['title'][:30]}...")
-        generate_huggingface_image(article, run_dir)
-
-    return selected_articles
 
 # Step 9-3. 생성 이미지 하단에 그라데이션과 한국어 제목을 합성합니다.
 # Step 9-3a. 포스터 텍스트 합성에 사용할 한글 폰트를 불러옵니다.

@@ -8,13 +8,12 @@ from constants import (
     IMAGE_GENERATION_STATUS_SKIPPED_NO_PROMPT,
     STATUS_SUCCESS,
 )
-
 from models import Article
 
 HUGGINGFACE_IMAGE_MODELS = [
-    "black-forest-labs/FLUX.1-schnell",
-    "stabilityai/stable-diffusion-3.5-large",
+    "stabilityai/stable-diffusion-3.5-large-turbo",
     "stabilityai/stable-diffusion-xl-base-1.0",
+    "black-forest-labs/FLUX.1-schnell",
 ]
 
 def generate_huggingface_image(article: Article, run_dir) -> Article:

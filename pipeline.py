@@ -70,6 +70,8 @@ def retry_failed_categories_with_backup(selected_articles: list[Article], run_di
 
         print(f"1순위 실패, 2순위 기사로 재시도: {article.category}")
 
+        # Backups must not carry their own fallback article, otherwise a bad category
+        # can recurse through unintended candidates instead of failing clearly.
         backup_article.selection_rank = "backup"
         backup_article.backup_article = None
 

@@ -5,6 +5,7 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 def now_kst():
+    # Scheduling and daily limits are business rules in Korea time, not runner-local time.
     return datetime.now(KST)
 
 

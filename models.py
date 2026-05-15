@@ -48,6 +48,7 @@ class Article:
 
     publish_status: str = ""
 
+    # Preserve unknown runtime fields so older artifacts can round-trip during schema changes.
     extra_fields: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod

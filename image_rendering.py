@@ -98,7 +98,7 @@ def clean_article_title(title):
 
     for unwanted_character in ["🚨", "⚠️", "✅", "📍", "🔎", "💡", "▯", "□", "☒", "×"]:
         cleaned_title = cleaned_title.replace(unwanted_character, "")
-        
+
     cleaned_title = re.sub(r"\s+", " ", cleaned_title).strip()
 
     if " - " in cleaned_title:
@@ -149,6 +149,7 @@ def render_news_image_overlay(article: Article) -> Article:
     title = extract_poster_title(article)
     footer = f"출처: {article.source} | {now_kst().strftime('%Y.%m.%d')}"
 
+    # Draw the breaking-news label separately so unsupported emoji never affect title wrapping.
     draw.text((x, badge_y), "[속보]", fill="#FFFFFF", font=badge_font)
 
     title_lines = wrap_text(draw, title, title_font, max_width=max_width, max_lines=2)

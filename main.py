@@ -46,6 +46,7 @@ from outputs import (
     save_selected_articles,
 )
 from news import fetch_top_news
+from models import articles_from_dicts, articles_to_dicts
 from pipeline import (
     process_content_pipeline,
     retry_failed_categories_with_backup,
@@ -73,6 +74,9 @@ if __name__ == "__main__":
 
         # Gemini가 고른 ID를 원본 기사 데이터와 매칭한 뒤 콘텐츠 생성 파이프라인을 실행합니다.
         selected_articles = match_selected_articles(selected_result, news_list)
+
+        selected_article_models = articles_from_dicts(selected_articles)
+        selected_articles = articles_to_dicts(selected_article_models)
 
         selected_articles = process_content_pipeline(selected_articles, run_dir)
         selected_articles = retry_failed_categories_with_backup(selected_articles, run_dir)

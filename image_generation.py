@@ -3,6 +3,12 @@ import os
 from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
 
+from constants import (
+    IMAGE_GENERATION_STATUS_FAILED,
+    IMAGE_GENERATION_STATUS_SKIPPED_NO_PROMPT,
+    STATUS_SUCCESS,
+)
+
 from models import Article
 
 HUGGINGFACE_IMAGE_MODELS = [
@@ -11,7 +17,7 @@ HUGGINGFACE_IMAGE_MODELS = [
     "stabilityai/stable-diffusion-xl-base-1.0",
 ]
 
-def generate_huggingface_image(article, run_dir):
+def generate_huggingface_image(article: Article, run_dir) -> Article:
     load_dotenv()
 
     hf_token = os.getenv("HF_TOKEN")
@@ -20,7 +26,7 @@ def generate_huggingface_image(article, run_dir):
 
     if not article.sdxl_image_prompt:
         article.image_path = ""
-        article.image_generation_status = "skipped_no_sdxl_prompt"
+        article.image_generation_status = IMAGE_GENERATION_STATUS_SKIPPED_NO_PROMPT
         return article
 
     output_dir = run_dir / "images"
@@ -50,7 +56,7 @@ def generate_huggingface_image(article, run_dir):
             image.save(image_path)
 
             article.image_path = str(image_path)
-            article.image_generation_status = "success"
+            article.image_generation_status = STATUS_SUCCESS
             article.image_generation_model = image_model
             article.image_generation_error = ""
             return article
@@ -60,13 +66,13 @@ def generate_huggingface_image(article, run_dir):
             print(f" -> 이미지 모델 실패: {image_model} ({e})")
 
     article.image_path = ""
-    article.image_generation_status = "generation_failed"
+    article.image_generation_status = IMAGE_GENERATION_STATUS_FAILED
     article.image_generation_model = ""
     article.image_generation_error = last_error
 
     return article
 
-def generate_huggingface_images(selected_articles, run_dir):
+def generate_huggingface_images(selected_articles: list[Article], run_dir) -> list[Article]:
     for article in selected_articles:
         print(f"Hugging Face 이미지 생성 중: {article.title[:30]}...")
         generate_huggingface_image(article, run_dir)

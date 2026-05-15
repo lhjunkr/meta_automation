@@ -2,10 +2,11 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from constants import STATUS_PUBLISHED, STATUS_READY
 from models import Article
 from time_utils import now_kst, today_kst
 
-def append_publish_history(selected_articles, status="ready"):
+def append_publish_history(selected_articles: list[Article], status: str = STATUS_READY) -> None:
     published_at = now_kst().isoformat(timespec="seconds")
 
     with open("history.jsonl", "a", encoding="utf-8") as f:
@@ -24,8 +25,7 @@ def append_publish_history(selected_articles, status="ready"):
 
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-
-def count_today_published():
+def count_today_published() -> int:
     history_path = Path("history.jsonl")
 
     if not history_path.exists():
@@ -46,7 +46,7 @@ def count_today_published():
             except json.JSONDecodeError:
                 continue
 
-            if record.get("status") != "published":
+            if record.get("status") != STATUS_PUBLISHED:
                 continue
 
             published_at = record.get("published_at", "")
@@ -61,8 +61,7 @@ def count_today_published():
 
     return count
 
-
-def is_already_published(article):
+def is_already_published(article: Article) -> bool:
     history_path = Path("history.jsonl")
 
     if not history_path.exists():

@@ -4,6 +4,12 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from constants import (
+    CAPTION_STATUS_SKIPPED_NO_BODY,
+    IMAGE_PROMPT_STATUS_SKIPPED_NO_CAPTION,
+    STATUS_SUCCESS,
+)
+
 from models import Article
 
 def build_news_context(news_list):
@@ -152,7 +158,7 @@ def parse_selected_ids(selected_result):
     return selected_items
 
 
-def match_selected_articles(selected_result, news_list):
+def match_selected_articles(selected_result: str, news_list: list[dict]) -> list[Article]:
     selected_items = parse_selected_ids(selected_result)
     news_by_id = {news["id"]: news for news in news_list}
 
@@ -185,7 +191,7 @@ def match_selected_articles(selected_result, news_list):
     return selected_articles
 
 # Step 7-1. 기사 본문을 인스타 캡션으로 바꾸기 위한 Gemini 프롬프트를 만듭니다.
-def build_instagram_caption_prompt(article):
+def build_instagram_caption_prompt(article: Article) -> str:
     return f"""**Role:** Professional Korean Social Media News Editor.
 
 You are an Instagram news editor who explains complex news in Korean within 10 seconds.
@@ -245,17 +251,17 @@ def parse_instagram_caption(raw_text):
 
 
 # Step 7-2. 기사 1개에 대해 한국어 인스타 캡션을 생성합니다.
-def generate_instagram_caption(article):
+def generate_instagram_caption(article: Article) -> Article:
     load_dotenv()
 
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError(".env 파일에 GEMINI_API_KEY를 먼저 입력하세요.")
 
-    if article.status != "success" or not article.body:
+    if article.status != STATUS_SUCCESS or not article.body:
         article.instagram_caption_raw = ""
         article.instagram_caption = ""
-        article.instagram_caption_status = "skipped_no_body"
+        article.instagram_caption_status = CAPTION_STATUS_SKIPPED_NO_BODY
         return article
 
     client = genai.Client(api_key=api_key)
@@ -270,13 +276,13 @@ def generate_instagram_caption(article):
 
     article.instagram_caption_raw = raw_text
     article.instagram_caption = parse_instagram_caption(raw_text)
-    article.instagram_caption_status = "success"
+    article.instagram_caption_status = STATUS_SUCCESS
 
     return article
 
 
 # Step 7-3. 선택된 기사 전체에 대해 인스타 캡션을 순차 생성합니다.
-def generate_instagram_captions(selected_articles):
+def generate_instagram_captions(selected_articles: list[Article]) -> list[Article]:
     for article in selected_articles:
         print(f"인스타 캡션 생성 중: {article.title[:30]}...")
         generate_instagram_caption(article)
@@ -284,7 +290,7 @@ def generate_instagram_captions(selected_articles):
     return selected_articles
 
 # Step 8-1. 인스타 캡션을 기반으로 SDXL 이미지 생성 프롬프트를 만듭니다.
-def build_sdxl_image_prompt(article):
+def build_sdxl_image_prompt(article: Article) -> str:
     step1_output = article.instagram_caption
 
     return f"""[Persona]
@@ -321,7 +327,7 @@ def parse_sdxl_image_prompt(raw_text):
 
 
 # Step 8-2. 기사 1개에 대해 SDXL 이미지 프롬프트를 생성합니다.
-def generate_sdxl_image_prompt(article):
+def generate_sdxl_image_prompt(article: Article) -> Article:
     load_dotenv()
 
     api_key = os.getenv("GEMINI_API_KEY")
@@ -331,7 +337,7 @@ def generate_sdxl_image_prompt(article):
     if not article.instagram_caption:
         article.sdxl_image_prompt_raw = ""
         article.sdxl_image_prompt = ""
-        article.sdxl_image_prompt_status = "skipped_no_caption"
+        article.sdxl_image_prompt_status = IMAGE_PROMPT_STATUS_SKIPPED_NO_CAPTION
         return article
 
     client = genai.Client(api_key=api_key)
@@ -346,13 +352,13 @@ def generate_sdxl_image_prompt(article):
 
     article.sdxl_image_prompt_raw = raw_text
     article.sdxl_image_prompt = parse_sdxl_image_prompt(raw_text)
-    article.sdxl_image_prompt_status = "success"
+    article.sdxl_image_prompt_status = STATUS_SUCCESS
     
     return article
 
 
 # Step 8-3. 선택된 기사 전체에 대해 이미지 프롬프트를 순차 생성합니다.
-def generate_sdxl_image_prompts(selected_articles):
+def generate_sdxl_image_prompts(selected_articles: list[Article]) -> list[Article]:
     for article in selected_articles:
         print(f"SDXL 이미지 프롬프트 생성 중: {article.title[:30]}...")
         generate_sdxl_image_prompt(article)

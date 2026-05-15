@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 from models import Article
+from reporting import build_run_failure_report
 from time_utils import now_kst, today_kst
 
 
@@ -16,7 +17,7 @@ def create_run_dir():
     return run_dir
 
 
-def save_instagram_captions(selected_articles: list[Article], run_dir):
+def save_instagram_captions(selected_articles: list[Article], run_dir) -> None:
     with open(run_dir / "instagram_captions.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
             f.write(f"ID: {article.id}\n")
@@ -29,7 +30,7 @@ def save_instagram_captions(selected_articles: list[Article], run_dir):
             f.write("\n\n---\n\n")
 
 
-def save_sdxl_image_prompts(selected_articles: list[Article], run_dir):
+def save_sdxl_image_prompts(selected_articles: list[Article], run_dir) -> None:
     with open(run_dir / "sdxl_image_prompts.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
             f.write(f"ID: {article.id}\n")
@@ -42,7 +43,7 @@ def save_sdxl_image_prompts(selected_articles: list[Article], run_dir):
             f.write("\n\n---\n\n")
 
 
-def save_failed_categories(failed_categories, run_dir):
+def save_failed_categories(failed_categories: list[dict], run_dir) -> None:
     with open(run_dir / "failed_categories.txt", "w", encoding="utf-8") as f:
         for item in failed_categories:
             f.write(f"Category: {item['category']}\n")
@@ -52,7 +53,12 @@ def save_failed_categories(failed_categories, run_dir):
             f.write("\n---\n\n")
 
 
-def save_generated_images(selected_articles: list[Article], run_dir):
+def save_failure_report(selected_articles: list[Article], run_dir) -> None:
+    with open(run_dir / "failure_report.txt", "w", encoding="utf-8") as f:
+        f.write(build_run_failure_report(selected_articles))
+
+
+def save_generated_images(selected_articles: list[Article], run_dir) -> None:
     with open(run_dir / "generated_images.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
             f.write(f"ID: {article.id}\n")
@@ -69,7 +75,7 @@ def save_generated_images(selected_articles: list[Article], run_dir):
             f.write("\n---\n\n")
 
 
-def save_selected_news(selected_articles: list[Article], run_dir):
+def save_selected_news(selected_articles: list[Article], run_dir) -> None:
     with open(run_dir / "selected_news.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
             f.write(f"ID: {article.id}\n")
@@ -83,7 +89,7 @@ def save_selected_news(selected_articles: list[Article], run_dir):
             f.write("\n---\n\n")
 
 
-def save_selected_articles(selected_articles: list[Article], run_dir):
+def save_selected_articles(selected_articles: list[Article], run_dir) -> None:
     with open(run_dir / "selected_articles.txt", "w", encoding="utf-8") as f:
         for article in selected_articles:
             f.write(f"ID: {article.id}\n")
@@ -120,14 +126,12 @@ def save_selected_articles(selected_articles: list[Article], run_dir):
             f.write(article.facebook_post_id)
             f.write("\nFacebook Publish Error:\n")
             f.write(article.facebook_publish_error)
-
             f.write("\n\nOverall Publish Status:\n")
             f.write(article.publish_status)
-
             f.write("\n\n---\n\n")
 
 
-def cleanup_old_outputs(keep_days=3):
+def cleanup_old_outputs(keep_days: int = 3) -> None:
     outputs_dir = Path("outputs")
 
     if not outputs_dir.exists():

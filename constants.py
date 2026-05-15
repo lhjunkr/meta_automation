@@ -1,0 +1,23 @@
+STATUS_SUCCESS = "success"
+STATUS_FAILED = "failed"
+STATUS_PUBLISHED = "published"
+STATUS_READY = "ready"
+
+ARTICLE_STATUS_RESOLVE_FAILED = "resolve_failed"
+ARTICLE_STATUS_DOWNLOAD_FAILED = "download_failed"
+
+CAPTION_STATUS_SKIPPED_NO_BODY = "skipped_no_body"
+
+IMAGE_PROMPT_STATUS_SKIPPED_NO_CAPTION = "skipped_no_caption"
+
+IMAGE_GENERATION_STATUS_SKIPPED_NO_PROMPT = "skipped_no_sdxl_prompt"
+IMAGE_GENERATION_STATUS_FAILED = "generation_failed"
+
+IMAGE_OVERLAY_STATUS_SKIPPED_NO_IMAGE = "skipped_no_image"
+IMAGE_OVERLAY_STATUS_FILE_MISSING = "image_file_missing"
+
+R2_UPLOAD_STATUS_SKIPPED_NO_FINAL_IMAGE = "skipped_no_final_image"
+R2_UPLOAD_STATUS_FAILED = "upload_failed"
+
+PUBLISH_STATUS_SKIPPED_NO_PUBLIC_IMAGE_URL = "skipped_no_public_image_url"
+PUBLISH_STATUS_SKIPPED_ALREADY_PUBLISHED = "skipped_already_published"

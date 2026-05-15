@@ -5,6 +5,12 @@ import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
+from constants import (
+    R2_UPLOAD_STATUS_FAILED,
+    R2_UPLOAD_STATUS_SKIPPED_NO_FINAL_IMAGE,
+    STATUS_SUCCESS,
+)
+
 from models import Article
 
 
@@ -56,7 +62,7 @@ def upload_image_to_r2(local_path, object_key):
     return f"{public_base_url.rstrip('/')}/{object_key}"
 
 
-def upload_article_images_to_r2(selected_articles, run_dir):
+def upload_article_images_to_r2(selected_articles: list[Article], run_dir) -> list[Article]:
     run_date = run_dir.name
 
     for article in selected_articles:
@@ -66,7 +72,7 @@ def upload_article_images_to_r2(selected_articles, run_dir):
 
         if not final_image_path:
             article.public_image_url = ""
-            article.r2_upload_status = "skipped_no_final_image"
+            article.r2_upload_status = R2_UPLOAD_STATUS_SKIPPED_NO_FINAL_IMAGE
             print(" -> 최종 이미지가 없어 R2 업로드를 건너뜁니다.")
             continue
 
@@ -76,12 +82,12 @@ def upload_article_images_to_r2(selected_articles, run_dir):
             public_url = upload_image_to_r2(final_image_path, object_key)
         except Exception as e:
             article.public_image_url = ""
-            article.r2_upload_status = "upload_failed"
+            article.r2_upload_status = R2_UPLOAD_STATUS_FAILED
             print(f" -> R2 업로드 실패: {e}")
             continue
 
         article.public_image_url = public_url
-        article.r2_upload_status = "success"
+        article.r2_upload_status = STATUS_SUCCESS
         print(f" -> R2 업로드 완료: {public_url}")
 
     return selected_articles

@@ -1,6 +1,12 @@
 import re
 from pathlib import Path
 
+from constants import (
+    IMAGE_OVERLAY_STATUS_FILE_MISSING,
+    IMAGE_OVERLAY_STATUS_SKIPPED_NO_IMAGE,
+    STATUS_SUCCESS,
+)
+
 from time_utils import now_kst
 from models import Article
 
@@ -99,7 +105,7 @@ def clean_article_title(title):
     return cleaned_title.strip()
 
 
-def extract_poster_title(article):
+def extract_poster_title(article: Article) -> str:
     caption = article.instagram_caption
 
     for line in caption.splitlines():
@@ -110,17 +116,17 @@ def extract_poster_title(article):
     return clean_article_title(article.title)
 
 
-def render_news_image_overlay(article):
+def render_news_image_overlay(article: Article) -> Article:
     image_path = article.image_path
     if not image_path:
         article.final_image_path = ""
-        article.image_overlay_status = "skipped_no_image"
+        article.image_overlay_status = IMAGE_OVERLAY_STATUS_SKIPPED_NO_IMAGE
         return article
 
     input_path = Path(image_path)
     if not input_path.exists():
         article.final_image_path = ""
-        article.image_overlay_status = "image_file_missing"
+        article.image_overlay_status = IMAGE_OVERLAY_STATUS_FILE_MISSING
         return article
 
     image = Image.open(input_path)
@@ -156,11 +162,11 @@ def render_news_image_overlay(article):
     image.convert("RGB").save(final_path, quality=95)
 
     article.final_image_path = str(final_path)
-    article.image_overlay_status = "success"
+    article.image_overlay_status = STATUS_SUCCESS
     return article
 
 
-def render_news_image_overlays(selected_articles):
+def render_news_image_overlays(selected_articles: list[Article]) -> list[Article]:
     for article in selected_articles:
         print(f"이미지 텍스트 합성 중: {article.title[:30]}...")
         render_news_image_overlay(article)

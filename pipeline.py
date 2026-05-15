@@ -1,4 +1,5 @@
 from content import generate_instagram_captions, generate_sdxl_image_prompts
+from constants import STATUS_PUBLISHED, STATUS_SUCCESS
 from history import append_publish_history
 from image_generation import generate_huggingface_images
 from image_rendering import render_news_image_overlays
@@ -6,6 +7,7 @@ from news import resolve_selected_article_links, fetch_selected_article_bodies
 from outputs import (
     cleanup_old_outputs,
     save_failed_categories,
+    save_failure_report,
     save_generated_images,
     save_instagram_captions,
     save_sdxl_image_prompts,
@@ -14,20 +16,19 @@ from storage import upload_article_images_to_r2
 from models import Article
 
 
-def is_article_complete(article):
+def is_article_complete(article: Article) -> bool:
     return (
-        article.status == "success"
-        and article.instagram_caption_status == "success"
-        and article.sdxl_image_prompt_status == "success"
-        and article.image_generation_status == "success"
-        and article.image_overlay_status == "success"
-        and article.r2_upload_status == "success"
+        article.status == STATUS_SUCCESS
+        and article.instagram_caption_status == STATUS_SUCCESS
+        and article.sdxl_image_prompt_status == STATUS_SUCCESS
+        and article.image_generation_status == STATUS_SUCCESS
+        and article.image_overlay_status == STATUS_SUCCESS
+        and article.r2_upload_status == STATUS_SUCCESS
         and bool(article.final_image_path)
         and bool(article.public_image_url)
     )
 
-
-def process_content_pipeline(selected_articles, run_dir):
+def process_content_pipeline(selected_articles: list[Article], run_dir) -> list[Article]:
     selected_articles = resolve_selected_article_links(selected_articles)
     selected_articles = fetch_selected_article_bodies(selected_articles)
 
@@ -45,7 +46,7 @@ def process_content_pipeline(selected_articles, run_dir):
     return selected_articles
 
 
-def retry_failed_categories_with_backup(selected_articles, run_dir):
+def retry_failed_categories_with_backup(selected_articles: list[Article], run_dir) -> list[Article]:
     final_articles = []
     failed_categories = []
 
@@ -87,10 +88,10 @@ def retry_failed_categories_with_backup(selected_articles, run_dir):
             )
 
     save_failed_categories(failed_categories, run_dir)
+    save_failure_report(final_articles, run_dir)
 
     return final_articles
 
-
-def handle_publish_success(published_articles):
-    append_publish_history(published_articles, status="published")
+def handle_publish_success(published_articles: list[Article]) -> None:
+    append_publish_history(published_articles, status=STATUS_PUBLISHED)
     cleanup_old_outputs(keep_days=3)

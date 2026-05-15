@@ -7,6 +7,12 @@ import trafilatura
 from googlenewsdecoder import gnewsdecoder
 from pygooglenews import GoogleNews
 
+from constants import (
+    ARTICLE_STATUS_DOWNLOAD_FAILED,
+    ARTICLE_STATUS_RESOLVE_FAILED,
+    STATUS_SUCCESS,
+)
+
 from models import Article
 
 # pygooglenews still imports feedparser 5.x, which expects this Python 2-era alias.
@@ -159,7 +165,7 @@ def resolve_article_url(google_link):
         return ""
 
 
-def resolve_selected_article_links(selected_articles):
+def resolve_selected_article_links(selected_articles: list[Article]) -> list[Article]:
     for article in selected_articles:
         print(f"URL 정화 중: {article.title[:30]}...")
         article.resolved_link = resolve_article_url(article.google_link)
@@ -167,7 +173,7 @@ def resolve_selected_article_links(selected_articles):
     return selected_articles
 
 
-def fetch_article_body(resolved_link):
+def fetch_article_body(resolved_link: str) -> tuple[str, str]:
     try:
         response = requests.get(
             resolved_link,
@@ -179,7 +185,7 @@ def fetch_article_body(resolved_link):
 
     except requests.RequestException as e:
         print(f"본문 페이지 다운로드 실패: {resolved_link} ({e})")
-        return "", "download_failed"
+        return "", ARTICLE_STATUS_DOWNLOAD_FAILED
 
     try:
         body = trafilatura.extract(
@@ -199,16 +205,16 @@ def fetch_article_body(resolved_link):
         return body, "extract_failed"
 
     print(f" -> 본문 추출 완료: {len(body.strip())}자")
-    return body, "success"
+    return body, STATUS_SUCCESS
 
 
-def fetch_selected_article_bodies(selected_articles):
+def fetch_selected_article_bodies(selected_articles: list[Article]) -> list[Article]:
     for article in selected_articles:
         print(f"본문 수집 중: {article.title[:30]}...")
 
         if not article.resolved_link:
             article.body = ""
-            article.status = "resolve_failed"
+            article.status = ARTICLE_STATUS_RESOLVE_FAILED
             print(" -> 원문 URL이 없어 본문 수집을 건너뜁니다.")
             continue
 

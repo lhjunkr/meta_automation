@@ -149,7 +149,7 @@ def render_news_image_overlay(article: Article) -> Article:
     title = extract_poster_title(article)
     footer = f"출처: {article.source} | {now_kst().strftime('%Y.%m.%d')}"
 
-    # Draw the breaking-news label separately so unsupported emoji never affect title wrapping.
+    # 지원되지 않는 이모지가 제목 줄바꿈에 영향을 주지 않도록 속보 라벨은 따로 그립니다.
     draw.text((x, badge_y), "[속보]", fill="#FFFFFF", font=badge_font)
 
     title_lines = wrap_text(draw, title, title_font, max_width=max_width, max_lines=2)

@@ -48,7 +48,7 @@ class Article:
 
     publish_status: str = ""
 
-    # Preserve unknown runtime fields so older artifacts can round-trip during schema changes.
+    # 스키마 변경 중에도 기존 산출물의 알 수 없는 필드를 왕복 보존합니다.
     extra_fields: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod

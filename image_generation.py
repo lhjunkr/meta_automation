@@ -35,8 +35,8 @@ def generate_huggingface_image(article: Article, run_dir) -> Article:
     client = InferenceClient(token=hf_token)
     last_error = ""
 
-    # External image providers can timeout independently; try the next model before
-    # marking the article failed so category-level backup logic still gets a chance.
+    # 외부 이미지 provider는 독립적으로 timeout이 날 수 있으므로,
+    # 기사 실패 처리 전에 다음 모델을 시도해 카테고리 backup 기회를 보존합니다.
     for image_model in HUGGINGFACE_IMAGE_MODELS:
         try:
             print(f" -> 이미지 모델 시도: {image_model}")

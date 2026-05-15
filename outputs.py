@@ -8,7 +8,7 @@ from time_utils import now_kst, today_kst
 
 
 def create_run_dir():
-    # GitHub-hosted runners use UTC by default; output folders follow KST operations.
+    # GitHub-hosted runner는 기본 UTC이므로 산출물 폴더는 운영 기준인 KST를 따릅니다.
     today = now_kst().strftime("%Y-%m-%d")
     run_dir = Path("outputs") / today
     image_dir = run_dir / "images"
@@ -55,7 +55,7 @@ def save_failed_categories(failed_categories: list[dict], run_dir) -> None:
 
 
 def save_failure_report(selected_articles: list[Article], run_dir) -> None:
-    # Keep the summary as a text artifact so failure emails can include it directly.
+    # 실패 이메일 본문에 바로 포함할 수 있도록 요약을 텍스트 산출물로 남깁니다.
     with open(run_dir / "failure_report.txt", "w", encoding="utf-8") as f:
         f.write(build_run_failure_report(selected_articles))
 

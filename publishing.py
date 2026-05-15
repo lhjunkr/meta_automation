@@ -74,7 +74,7 @@ def preflight_meta_publishing() -> dict:
     ):
         raise RuntimeError("Meta preflight에 필요한 환경변수가 없습니다.")
 
-    # Fail before creating media containers if production tokens or IDs drift.
+    # 운영 토큰이나 ID가 어긋났다면 media container 생성 전에 실패시킵니다.
     print("Meta preflight 검증 중...")
 
     instagram_account = fetch_meta_graph_object(

@@ -1,6 +1,7 @@
 import re
-from datetime import datetime
 from pathlib import Path
+
+from time_utils import now_kst
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -134,7 +135,7 @@ def render_news_image_overlay(article):
     max_width = image.size[0] - (x * 2)
 
     title = extract_poster_title(article)
-    footer = f"출처: {article.get('source', '')} | {datetime.now().strftime('%Y.%m.%d')}"
+    footer = f"출처: {article.get('source', '')} | {now_kst().strftime('%Y.%m.%d')}"
 
     title_lines = wrap_text(draw, title, title_font, max_width=max_width, max_lines=2)
     for idx, line in enumerate(title_lines):

@@ -2,9 +2,10 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from time_utils import now_kst, today_kst
 
 def append_publish_history(selected_articles, status="ready"):
-    published_at = datetime.now().isoformat(timespec="seconds")
+    published_at = now_kst().isoformat(timespec="seconds")
 
     with open("history.jsonl", "a", encoding="utf-8") as f:
         for article in selected_articles:
@@ -29,7 +30,7 @@ def count_today_published():
     if not history_path.exists():
         return 0
 
-    today = datetime.now().date()
+    today = today_kst()
     count = 0
 
     with open(history_path, "r", encoding="utf-8") as f:

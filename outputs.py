@@ -2,9 +2,11 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from time_utils import now_kst, today_kst
+
 # Step 0-1. 오늘 날짜 기준 실행 폴더와 이미지 저장 폴더를 준비합니다.
 def create_run_dir():
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = now_kst().strftime("%Y-%m-%d")
     run_dir = Path("outputs") / today
     image_dir = run_dir / "images"
 
@@ -129,7 +131,7 @@ def cleanup_old_outputs(keep_days=3):
     if not outputs_dir.exists():
         return
 
-    today = datetime.now().date()
+    today = today_kst()
 
     for run_dir in outputs_dir.iterdir():
         if not run_dir.is_dir():

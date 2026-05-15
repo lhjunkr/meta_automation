@@ -93,5 +93,5 @@ jobs:
             Status: ${{ job.status }}
             Branch: ${{ github.ref_name }}
             Run URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
+          attachments: outputs/**/*.txt
 

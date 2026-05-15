@@ -1,16 +1,15 @@
 import re
 from pathlib import Path
 
+from PIL import Image, ImageDraw, ImageFont
+
 from constants import (
     IMAGE_OVERLAY_STATUS_FILE_MISSING,
     IMAGE_OVERLAY_STATUS_SKIPPED_NO_IMAGE,
     STATUS_SUCCESS,
 )
-
-from time_utils import now_kst
 from models import Article
-
-from PIL import Image, ImageDraw, ImageFont
+from time_utils import now_kst
 
 
 def load_korean_font(size, bold=False):
@@ -41,6 +40,9 @@ def apply_bottom_gradient(image):
     width, height = image.size
     gradient = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     gradient_pixels = gradient.load()
+    if gradient_pixels is None:
+        raise RuntimeError("그라데이션 픽셀 버퍼를 초기화하지 못했습니다.")
+
     start_y = int(height * 0.68)
 
     for y in range(start_y, height):

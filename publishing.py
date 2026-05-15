@@ -16,7 +16,6 @@ from constants import (
 from history import count_today_published, is_already_published
 from models import Article
 
-
 GRAPH_API_VERSION = "v19.0"
 
 
@@ -66,6 +65,14 @@ def preflight_meta_publishing() -> dict:
     ig_user_id = os.getenv("IG_USER_ID")
     facebook_page_id = os.getenv("FACEBOOK_PAGE_ID")
     facebook_page_access_token = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
+
+    if (
+        not meta_access_token
+        or not ig_user_id
+        or not facebook_page_id
+        or not facebook_page_access_token
+    ):
+        raise RuntimeError("Meta preflight에 필요한 환경변수가 없습니다.")
 
     print("Meta preflight 검증 중...")
 
@@ -232,7 +239,7 @@ def get_publish_delay_seconds(publish_index: int) -> int:
 def publish_to_social_channels(selected_articles: list[Article]) -> list[Article]:
     preflight_meta_publishing()
 
-    published_articles = []
+    published_articles: list[Article] = []
     max_daily_posts = get_int_env("MAX_DAILY_POSTS", 3)
     already_published_today = count_today_published()
     remaining_slots = max_daily_posts - already_published_today

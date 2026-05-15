@@ -36,6 +36,19 @@ jobs:
           pip install "setuptools<58" wheel
           pip install --no-build-isolation -r requirements.txt
 
+      - name: Install development dependencies
+        run: |
+          pip install -r requirements-dev.txt
+
+      - name: Run static checks
+        run: |
+          ruff check .
+          mypy .
+
+      - name: Run unit tests
+        run: |
+          python -m unittest discover -s tests
+
       - name: Create .env file
         run: |
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
@@ -77,6 +90,27 @@ jobs:
             echo "No history.jsonl file to commit"
           fi
 
+      - name: Build email report body
+        if: always()
+        run: |
+          failure_report_path="$(find outputs -path '*/failure_report.txt' -type f | sort | tail -n 1 || true)"
+
+          {
+            echo "Workflow: Daily Meta Automation"
+            echo "Status: ${{ job.status }}"
+            echo "Branch: ${{ github.ref_name }}"
+            echo "Run URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            echo "Failure Report:"
+            echo ""
+
+            if [ -n "$failure_report_path" ]; then
+              cat "$failure_report_path"
+            else
+              echo "failure_report.txt was not generated."
+            fi
+          } > email_report.txt
+
       - name: Send email report
         if: always()
         uses: dawidd6/action-send-mail@v6
@@ -88,10 +122,5 @@ jobs:
           subject: "Meta Automation ${{ job.status }} - Run #${{ github.run_number }}"
           to: ${{ secrets.REPORT_EMAIL_TO }}
           from: Meta Automation <${{ secrets.SMTP_USERNAME }}>
-          body: |
-            Workflow: Daily Meta Automation
-            Status: ${{ job.status }}
-            Branch: ${{ github.ref_name }}
-            Run URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          body: file://email_report.txt
           attachments: outputs/**/*.txt
-

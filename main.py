@@ -1,56 +1,27 @@
-import os
 import base64
-import requests
-import trafilatura
-import json
-import shutil
-import boto3
-import random
-import time
-import re
 
 # pygooglenews still imports feedparser 5.x, which expects this Python 2-era alias.
 # Define it before pygooglenews imports feedparser so GitHub Actions can run on Python 3.11.
 if not hasattr(base64, "decodestring"):
     base64.decodestring = base64.decodebytes
 
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-from googlenewsdecoder import gnewsdecoder
-from pygooglenews import GoogleNews
-from pathlib import Path
-from datetime import datetime
-from PIL import Image, ImageDraw, ImageFont
-from huggingface_hub import InferenceClient
-from botocore.exceptions import ClientError
-from config import get_int_env, is_dry_run
-from history import append_publish_history, count_today_published, is_already_published
-from publishing import publish_to_social_channels
+from config import is_dry_run
 from content import (
-    select_best_articles,
     match_selected_articles,
-    generate_instagram_captions,
-    generate_sdxl_image_prompts,
-)
-from image_generation import generate_huggingface_images
-from image_rendering import render_news_image_overlays
-from storage import upload_article_images_to_r2
-from outputs import (
-    create_run_dir,
-    save_instagram_captions,
-    save_sdxl_image_prompts,
-    save_failed_categories,
-    save_generated_images,
-    save_selected_news,
-    save_selected_articles,
+    select_best_articles,
 )
 from news import fetch_top_news
+from outputs import (
+    create_run_dir,
+    save_selected_articles,
+    save_selected_news,
+)
 from pipeline import (
+    handle_publish_success,
     process_content_pipeline,
     retry_failed_categories_with_backup,
-    handle_publish_success,
 )
+from publishing import publish_to_social_channels
 
 # Main. 전체 콘텐츠 생성 파이프라인을 실행합니다.
 if __name__ == "__main__":

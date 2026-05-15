@@ -1,9 +1,10 @@
-from content import generate_instagram_captions, generate_sdxl_image_prompts
 from constants import STATUS_PUBLISHED, STATUS_SUCCESS
+from content import generate_instagram_captions, generate_sdxl_image_prompts
 from history import append_publish_history
 from image_generation import generate_huggingface_images
 from image_rendering import render_news_image_overlays
-from news import resolve_selected_article_links, fetch_selected_article_bodies
+from models import Article
+from news import fetch_selected_article_bodies, resolve_selected_article_links
 from outputs import (
     cleanup_old_outputs,
     save_failed_categories,
@@ -13,7 +14,6 @@ from outputs import (
     save_sdxl_image_prompts,
 )
 from storage import upload_article_images_to_r2
-from models import Article
 
 
 def is_article_complete(article: Article) -> bool:

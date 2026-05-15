@@ -12,7 +12,6 @@ from constants import (
     ARTICLE_STATUS_RESOLVE_FAILED,
     STATUS_SUCCESS,
 )
-
 from models import Article
 
 # pygooglenews still imports feedparser 5.x, which expects this Python 2-era alias.
@@ -57,7 +56,7 @@ def is_excluded_source(source):
 
 
 def load_seen_links():
-    seen_links = set()
+    seen_links: set[str] = set()
     history_path = Path("history.jsonl")
 
     if not history_path.exists():
@@ -91,7 +90,7 @@ def fetch_top_news():
 
     gn_kr = GoogleNews(lang="ko", country="KR")
     gn_us = GoogleNews(lang="en", country="US")
-    raw_news = []
+    raw_news: list[dict] = []
 
     def add_news(entries, category_name):
         added_count = 0

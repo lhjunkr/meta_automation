@@ -27,8 +27,11 @@ class ArticleModelTest(unittest.TestCase):
 
         self.assertEqual(article.id, 1)
         self.assertEqual(article.category, "경제(US)")
-        self.assertIsNotNone(article.backup_article)
-        self.assertEqual(article.backup_article.id, 2)
+        backup_article = article.backup_article
+
+        self.assertIsNotNone(backup_article)
+        assert backup_article is not None
+        self.assertEqual(backup_article.id, 2)
         self.assertEqual(article_data["unknown_runtime_field"], "keep-me")
         self.assertEqual(article_data["backup_article"]["title"], "Backup title")
 

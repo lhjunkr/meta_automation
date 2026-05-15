@@ -10,7 +10,6 @@ from constants import (
     R2_UPLOAD_STATUS_SKIPPED_NO_FINAL_IMAGE,
     STATUS_SUCCESS,
 )
-
 from models import Article
 
 

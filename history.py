@@ -6,6 +6,7 @@ from constants import STATUS_PUBLISHED, STATUS_READY
 from models import Article
 from time_utils import now_kst, today_kst
 
+
 def append_publish_history(selected_articles: list[Article], status: str = STATUS_READY) -> None:
     published_at = now_kst().isoformat(timespec="seconds")
 

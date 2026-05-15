@@ -9,8 +9,8 @@ from constants import (
     IMAGE_PROMPT_STATUS_SKIPPED_NO_CAPTION,
     STATUS_SUCCESS,
 )
-
 from models import Article
+
 
 def build_news_context(news_list):
     lines = []
@@ -128,12 +128,11 @@ Backup ID: [Article ID]
         config=types.GenerateContentConfig(temperature=0.2),
     )
 
-    return response.text.strip()
-
+    return (response.text or "").strip()
 
 def parse_selected_ids(selected_result):
-    selected_items = []
-    current_item = {}
+    selected_items: list[dict] = []
+    current_item: dict = {}
 
     for line in selected_result.splitlines():
         line = line.strip()
@@ -272,7 +271,7 @@ def generate_instagram_caption(article: Article) -> Article:
         config=types.GenerateContentConfig(temperature=0.7),
     )
 
-    raw_text = response.text.strip()
+    raw_text = (response.text or "").strip()
 
     article.instagram_caption_raw = raw_text
     article.instagram_caption = parse_instagram_caption(raw_text)
@@ -348,7 +347,7 @@ def generate_sdxl_image_prompt(article: Article) -> Article:
         config=types.GenerateContentConfig(temperature=0.7),
     )
 
-    raw_text = response.text.strip()
+    raw_text = (response.text or "").strip()
 
     article.sdxl_image_prompt_raw = raw_text
     article.sdxl_image_prompt = parse_sdxl_image_prompt(raw_text)

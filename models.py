@@ -65,13 +65,6 @@ class Article:
             else None
         )
 
-        known_values = {
-            field_name: article_data.get(field_name)
-            for field_name in known_field_names
-            if field_name in article_data and field_name != "backup_article"
-        }
-        known_values["backup_article"] = backup_article
-
         extra_fields = {
             key: value
             for key, value in article_data.items()
@@ -84,11 +77,32 @@ class Article:
             title=article_data["title"],
             source=article_data.get("source", ""),
             google_link=article_data["google_link"],
-            **{
-                key: value
-                for key, value in known_values.items()
-                if key not in {"id", "category", "title", "source", "google_link"}
-            },
+            selection_rank=article_data.get("selection_rank", ""),
+            backup_article=backup_article,
+            resolved_link=article_data.get("resolved_link", ""),
+            body=article_data.get("body", ""),
+            status=article_data.get("status", ""),
+            instagram_caption_raw=article_data.get("instagram_caption_raw", ""),
+            instagram_caption=article_data.get("instagram_caption", ""),
+            instagram_caption_status=article_data.get("instagram_caption_status", ""),
+            sdxl_image_prompt_raw=article_data.get("sdxl_image_prompt_raw", ""),
+            sdxl_image_prompt=article_data.get("sdxl_image_prompt", ""),
+            sdxl_image_prompt_status=article_data.get("sdxl_image_prompt_status", ""),
+            image_path=article_data.get("image_path", ""),
+            image_generation_status=article_data.get("image_generation_status", ""),
+            image_generation_model=article_data.get("image_generation_model", ""),
+            image_generation_error=article_data.get("image_generation_error", ""),
+            final_image_path=article_data.get("final_image_path", ""),
+            image_overlay_status=article_data.get("image_overlay_status", ""),
+            public_image_url=article_data.get("public_image_url", ""),
+            r2_upload_status=article_data.get("r2_upload_status", ""),
+            instagram_publish_status=article_data.get("instagram_publish_status", ""),
+            instagram_post_id=article_data.get("instagram_post_id", ""),
+            instagram_publish_error=article_data.get("instagram_publish_error", ""),
+            facebook_publish_status=article_data.get("facebook_publish_status", ""),
+            facebook_post_id=article_data.get("facebook_post_id", ""),
+            facebook_publish_error=article_data.get("facebook_publish_error", ""),
+            publish_status=article_data.get("publish_status", ""),
             extra_fields=extra_fields,
         )
 

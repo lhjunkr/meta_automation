@@ -11,18 +11,19 @@ from outputs import (
     save_sdxl_image_prompts,
 )
 from storage import upload_article_images_to_r2
+from models import Article
 
 
 def is_article_complete(article):
     return (
-        article.get("status") == "success"
-        and article.get("instagram_caption_status") == "success"
-        and article.get("sdxl_image_prompt_status") == "success"
-        and article.get("image_generation_status") == "success"
-        and article.get("image_overlay_status") == "success"
-        and article.get("r2_upload_status") == "success"
-        and bool(article.get("final_image_path"))
-        and bool(article.get("public_image_url"))
+        article.status == "success"
+        and article.instagram_caption_status == "success"
+        and article.sdxl_image_prompt_status == "success"
+        and article.image_generation_status == "success"
+        and article.image_overlay_status == "success"
+        and article.r2_upload_status == "success"
+        and bool(article.final_image_path)
+        and bool(article.public_image_url)
     )
 
 
@@ -53,23 +54,23 @@ def retry_failed_categories_with_backup(selected_articles, run_dir):
             final_articles.append(article)
             continue
 
-        backup_article = article.get("backup_article")
+        backup_article = article.backup_article
 
         if not backup_article:
             failed_categories.append(
                 {
-                    "category": article.get("category", ""),
-                    "primary_id": article.get("id", ""),
+                    "category": article.category,
+                    "primary_id": article.id,
                     "backup_id": "",
                     "reason": "primary_failed_no_backup",
                 }
             )
             continue
 
-        print(f"1순위 실패, 2순위 기사로 재시도: {article['category']}")
+        print(f"1순위 실패, 2순위 기사로 재시도: {article.category}")
 
-        backup_article["selection_rank"] = "backup"
-        backup_article["backup_article"] = None
+        backup_article.selection_rank = "backup"
+        backup_article.backup_article = None
 
         processed_backup = process_content_pipeline([backup_article], run_dir)[0]
 
@@ -78,9 +79,9 @@ def retry_failed_categories_with_backup(selected_articles, run_dir):
         else:
             failed_categories.append(
                 {
-                    "category": article.get("category", ""),
-                    "primary_id": article.get("id", ""),
-                    "backup_id": backup_article.get("id", ""),
+                    "category": article.category,
+                    "primary_id": article.id,
+                    "backup_id": backup_article.id,
                     "reason": "primary_and_backup_failed",
                 }
             )

@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 from time_utils import now_kst
+from models import Article
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -99,27 +100,27 @@ def clean_article_title(title):
 
 
 def extract_poster_title(article):
-    caption = article.get("instagram_caption", "")
+    caption = article.instagram_caption
 
     for line in caption.splitlines():
         line = line.strip()
         if line:
             return clean_article_title(line)
 
-    return clean_article_title(article.get("title", ""))
+    return clean_article_title(article.title)
 
 
 def render_news_image_overlay(article):
-    image_path = article.get("image_path")
+    image_path = article.image_path
     if not image_path:
-        article["final_image_path"] = ""
-        article["image_overlay_status"] = "skipped_no_image"
+        article.final_image_path = ""
+        article.image_overlay_status = "skipped_no_image"
         return article
 
     input_path = Path(image_path)
     if not input_path.exists():
-        article["final_image_path"] = ""
-        article["image_overlay_status"] = "image_file_missing"
+        article.final_image_path = ""
+        article.image_overlay_status = "image_file_missing"
         return article
 
     image = Image.open(input_path)
@@ -138,7 +139,7 @@ def render_news_image_overlay(article):
     max_width = image.size[0] - (x * 2)
 
     title = extract_poster_title(article)
-    footer = f"출처: {article.get('source', '')} | {now_kst().strftime('%Y.%m.%d')}"
+    footer = f"출처: {article.source} | {now_kst().strftime('%Y.%m.%d')}"
 
     draw.text((x, badge_y), "[속보]", fill="#FFFFFF", font=badge_font)
 
@@ -154,14 +155,14 @@ def render_news_image_overlay(article):
     final_path = input_path.with_name(f"{input_path.stem}_final{input_path.suffix}")
     image.convert("RGB").save(final_path, quality=95)
 
-    article["final_image_path"] = str(final_path)
-    article["image_overlay_status"] = "success"
+    article.final_image_path = str(final_path)
+    article.image_overlay_status = "success"
     return article
 
 
 def render_news_image_overlays(selected_articles):
     for article in selected_articles:
-        print(f"이미지 텍스트 합성 중: {article['title'][:30]}...")
+        print(f"이미지 텍스트 합성 중: {article.title[:30]}...")
         render_news_image_overlay(article)
 
     return selected_articles

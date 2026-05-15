@@ -5,6 +5,8 @@ import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
+from models import Article
+
 
 def create_r2_client():
     load_dotenv()
@@ -58,28 +60,28 @@ def upload_article_images_to_r2(selected_articles, run_dir):
     run_date = run_dir.name
 
     for article in selected_articles:
-        print(f"R2 이미지 업로드 중: {article['title'][:30]}...")
+        print(f"R2 이미지 업로드 중: {article.title[:30]}...")
 
-        final_image_path = article.get("final_image_path")
+        final_image_path = article.final_image_path
 
         if not final_image_path:
-            article["public_image_url"] = ""
-            article["r2_upload_status"] = "skipped_no_final_image"
+            article.public_image_url = ""
+            article.r2_upload_status = "skipped_no_final_image"
             print(" -> 최종 이미지가 없어 R2 업로드를 건너뜁니다.")
             continue
 
-        object_key = f"{run_date}/article_{article['id']}_final.png"
+        object_key = f"{run_date}/article_{article.id}_final.png"
 
         try:
             public_url = upload_image_to_r2(final_image_path, object_key)
         except Exception as e:
-            article["public_image_url"] = ""
-            article["r2_upload_status"] = "upload_failed"
+            article.public_image_url = ""
+            article.r2_upload_status = "upload_failed"
             print(f" -> R2 업로드 실패: {e}")
             continue
 
-        article["public_image_url"] = public_url
-        article["r2_upload_status"] = "success"
+        article.public_image_url = public_url
+        article.r2_upload_status = "success"
         print(f" -> R2 업로드 완료: {public_url}")
 
     return selected_articles

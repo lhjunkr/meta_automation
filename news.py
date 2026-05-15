@@ -7,6 +7,8 @@ import trafilatura
 from googlenewsdecoder import gnewsdecoder
 from pygooglenews import GoogleNews
 
+from models import Article
+
 # pygooglenews still imports feedparser 5.x, which expects this Python 2-era alias.
 # Define it before pygooglenews imports feedparser so GitHub Actions can run on Python 3.11.
 if not hasattr(base64, "decodestring"):
@@ -159,8 +161,8 @@ def resolve_article_url(google_link):
 
 def resolve_selected_article_links(selected_articles):
     for article in selected_articles:
-        print(f"URL 정화 중: {article['title'][:30]}...")
-        article["resolved_link"] = resolve_article_url(article["google_link"])
+        print(f"URL 정화 중: {article.title[:30]}...")
+        article.resolved_link = resolve_article_url(article.google_link)
 
     return selected_articles
 
@@ -202,16 +204,14 @@ def fetch_article_body(resolved_link):
 
 def fetch_selected_article_bodies(selected_articles):
     for article in selected_articles:
-        print(f"본문 수집 중: {article['title'][:30]}...")
+        print(f"본문 수집 중: {article.title[:30]}...")
 
-        if not article.get("resolved_link"):
-            article["body"] = ""
-            article["status"] = "resolve_failed"
+        if not article.resolved_link:
+            article.body = ""
+            article.status = "resolve_failed"
             print(" -> 원문 URL이 없어 본문 수집을 건너뜁니다.")
             continue
 
-        article["body"], article["status"] = fetch_article_body(
-            article["resolved_link"]
-        )
+        article.body, article.status = fetch_article_body(article.resolved_link)
 
     return selected_articles

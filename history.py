@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from models import Article
 from time_utils import now_kst, today_kst
 
 def append_publish_history(selected_articles, status="ready"):
@@ -12,13 +13,13 @@ def append_publish_history(selected_articles, status="ready"):
             record = {
                 "published_at": published_at,
                 "status": status,
-                "category": article.get("category", ""),
-                "title": article.get("title", ""),
-                "source": article.get("source", ""),
-                "google_link": article.get("google_link", ""),
-                "resolved_link": article.get("resolved_link", ""),
-                "instagram_post_id": article.get("instagram_post_id", ""),
-                "final_image_path": article.get("final_image_path", ""),
+                "category": article.category,
+                "title": article.title,
+                "source": article.source,
+                "google_link": article.google_link,
+                "resolved_link": article.resolved_link,
+                "instagram_post_id": article.instagram_post_id,
+                "final_image_path": article.final_image_path,
             }
 
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -67,9 +68,9 @@ def is_already_published(article):
     if not history_path.exists():
         return False
 
-    current_google_link = article.get("google_link", "")
-    current_resolved_link = article.get("resolved_link", "")
-    current_public_image_url = article.get("public_image_url", "")
+    current_google_link = article.google_link
+    current_resolved_link = article.resolved_link
+    current_public_image_url = article.public_image_url
 
     with open(history_path, "r", encoding="utf-8") as f:
         for line in f:

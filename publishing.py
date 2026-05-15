@@ -7,8 +7,11 @@ from dotenv import load_dotenv
 
 from config import get_int_env
 from history import count_today_published, is_already_published
+from models import Article
+
 
 GRAPH_API_VERSION = "v19.0"
+
 
 def validate_meta_config():
     load_dotenv()
@@ -26,6 +29,7 @@ def validate_meta_config():
         raise RuntimeError(
             ".env에 Meta 업로드 설정이 없습니다: " + ", ".join(missing_keys)
         )
+
 
 def fetch_meta_graph_object(object_id, access_token, fields):
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{object_id}"
@@ -45,6 +49,7 @@ def fetch_meta_graph_object(object_id, access_token, fields):
         raise RuntimeError(f"Meta Graph API 검증 실패: {data}")
 
     return data
+
 
 def preflight_meta_publishing():
     load_dotenv()
@@ -77,14 +82,15 @@ def preflight_meta_publishing():
         "facebook_page_name": facebook_page.get("name", ""),
     }
 
-def create_instagram_media_container(article):
+
+def create_instagram_media_container(article: Article):
     load_dotenv()
 
     access_token = os.getenv("META_ACCESS_TOKEN")
     ig_user_id = os.getenv("IG_USER_ID")
 
-    image_url = article.get("public_image_url")
-    caption = article.get("instagram_caption", "")
+    image_url = article.public_image_url
+    caption = article.instagram_caption
 
     if not image_url:
         raise RuntimeError("public_image_url이 없어 Instagram 컨테이너를 만들 수 없습니다.")
@@ -128,40 +134,40 @@ def publish_instagram_media(creation_id):
     return data["id"]
 
 
-def publish_article_to_instagram(article):
+def publish_article_to_instagram(article: Article):
     try:
         creation_id = create_instagram_media_container(article)
         instagram_post_id = publish_instagram_media(creation_id)
 
-        article["instagram_publish_status"] = "success"
-        article["instagram_post_id"] = instagram_post_id
-        article["instagram_publish_error"] = ""
+        article.instagram_publish_status = "success"
+        article.instagram_post_id = instagram_post_id
+        article.instagram_publish_error = ""
 
         print(f" -> Instagram 게시 완료: {instagram_post_id}")
 
     except Exception as e:
-        article["instagram_publish_status"] = "failed"
-        article["instagram_post_id"] = ""
-        article["instagram_publish_error"] = str(e)
+        article.instagram_publish_status = "failed"
+        article.instagram_post_id = ""
+        article.instagram_publish_error = str(e)
 
         print(f" -> Instagram 게시 실패: {e}")
 
     return article
 
 
-def publish_article_to_facebook_page(article):
+def publish_article_to_facebook_page(article: Article):
     load_dotenv()
 
     page_id = os.getenv("FACEBOOK_PAGE_ID")
     page_access_token = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
 
-    image_url = article.get("public_image_url")
-    caption = article.get("instagram_caption", "")
+    image_url = article.public_image_url
+    caption = article.instagram_caption
 
     if not image_url:
-        article["facebook_publish_status"] = "failed"
-        article["facebook_post_id"] = ""
-        article["facebook_publish_error"] = "public_image_url이 없어 Facebook에 게시할 수 없습니다."
+        article.facebook_publish_status = "failed"
+        article.facebook_post_id = ""
+        article.facebook_publish_error = "public_image_url이 없어 Facebook에 게시할 수 없습니다."
         return article
 
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{page_id}/photos"
@@ -180,16 +186,16 @@ def publish_article_to_facebook_page(article):
         if response.status_code >= 400 or "id" not in data:
             raise RuntimeError(f"Facebook 게시 실패: {data}")
 
-        article["facebook_publish_status"] = "success"
-        article["facebook_post_id"] = data["id"]
-        article["facebook_publish_error"] = ""
+        article.facebook_publish_status = "success"
+        article.facebook_post_id = data["id"]
+        article.facebook_publish_error = ""
 
         print(f" -> Facebook 게시 완료: {data['id']}")
 
     except Exception as e:
-        article["facebook_publish_status"] = "failed"
-        article["facebook_post_id"] = ""
-        article["facebook_publish_error"] = str(e)
+        article.facebook_publish_status = "failed"
+        article.facebook_post_id = ""
+        article.facebook_publish_error = str(e)
 
         print(f" -> Facebook 게시 실패: {e}")
 
@@ -216,7 +222,7 @@ def get_publish_delay_seconds(publish_index):
     )
 
 
-def publish_to_social_channels(selected_articles):
+def publish_to_social_channels(selected_articles: list[Article]):
     preflight_meta_publishing()
 
     published_articles = []
@@ -234,13 +240,13 @@ def publish_to_social_channels(selected_articles):
         if len(published_articles) >= remaining_slots:
             break
 
-        if not article.get("public_image_url"):
-            article["publish_status"] = "skipped_no_public_image_url"
+        if not article.public_image_url:
+            article.publish_status = "skipped_no_public_image_url"
             print(" -> public_image_url이 없어 게시를 건너뜁니다.")
             continue
 
         if is_already_published(article):
-            article["publish_status"] = "skipped_already_published"
+            article.publish_status = "skipped_already_published"
             print(" -> 이미 게시된 기사라 건너뜁니다.")
             continue
 
@@ -257,12 +263,12 @@ def publish_to_social_channels(selected_articles):
         publish_article_to_facebook_page(article)
 
         if (
-            article.get("instagram_publish_status") == "success"
-            and article.get("facebook_publish_status") == "success"
+            article.instagram_publish_status == "success"
+            and article.facebook_publish_status == "success"
         ):
-            article["publish_status"] = "published"
+            article.publish_status = "published"
             published_articles.append(article)
         else:
-            article["publish_status"] = "failed"
+            article.publish_status = "failed"
 
     return published_articles

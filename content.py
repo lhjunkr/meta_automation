@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from models import Article
 
 def build_news_context(news_list):
     lines = []
@@ -160,22 +161,24 @@ def match_selected_articles(selected_result, news_list):
     for item in selected_items:
         category = item["category"]
 
-        primary_article = news_by_id.get(item.get("primary_id"))
-        backup_article = news_by_id.get(item.get("backup_id"))
+        primary_article_data = news_by_id.get(item.get("primary_id"))
+        backup_article_data = news_by_id.get(item.get("backup_id"))
 
-        if primary_article:
-            primary_article = primary_article.copy()
-            primary_article["selection_rank"] = "primary"
-            primary_article["backup_article"] = backup_article.copy() if backup_article else None
-            selected_articles.append(primary_article)
+        if primary_article_data:
+            primary_article_data = primary_article_data.copy()
+            primary_article_data["selection_rank"] = "primary"
+            primary_article_data["backup_article"] = (
+                backup_article_data.copy() if backup_article_data else None
+            )
+            selected_articles.append(Article.from_dict(primary_article_data))
         else:
             print(f"1순위 ID를 찾을 수 없습니다: {item.get('primary_id')}")
 
-            if backup_article:
-                backup_article = backup_article.copy()
-                backup_article["selection_rank"] = "backup"
-                backup_article["backup_article"] = None
-                selected_articles.append(backup_article)
+            if backup_article_data:
+                backup_article_data = backup_article_data.copy()
+                backup_article_data["selection_rank"] = "backup"
+                backup_article_data["backup_article"] = None
+                selected_articles.append(Article.from_dict(backup_article_data))
             else:
                 print(f"2순위 ID도 찾을 수 없습니다: {category}")
 
@@ -226,10 +229,10 @@ Replace #[기사카테고리] with one actual Korean category hashtag.
 Examples: #경제, #국제, #정치, #기술, #사회
 
 **Selected Article Content:**
-- Title: {article['title']}
-- Category: {article['category']}
-- Source: {article['source']}
-- Body: {article['body']}"""
+- Title: {article.title}
+- Category: {article.category}
+- Source: {article.source}
+- Body: {article.body}"""
 
 # Step 7-1a. Gemini 응답에서 실제 캡션 영역만 분리합니다.
 def parse_instagram_caption(raw_text):
@@ -249,10 +252,10 @@ def generate_instagram_caption(article):
     if not api_key:
         raise RuntimeError(".env 파일에 GEMINI_API_KEY를 먼저 입력하세요.")
 
-    if article.get("status") != "success" or not article.get("body"):
-        article["instagram_caption_raw"] = ""
-        article["instagram_caption"] = ""
-        article["instagram_caption_status"] = "skipped_no_body"
+    if article.status != "success" or not article.body:
+        article.instagram_caption_raw = ""
+        article.instagram_caption = ""
+        article.instagram_caption_status = "skipped_no_body"
         return article
 
     client = genai.Client(api_key=api_key)
@@ -265,9 +268,9 @@ def generate_instagram_caption(article):
 
     raw_text = response.text.strip()
 
-    article["instagram_caption_raw"] = raw_text
-    article["instagram_caption"] = parse_instagram_caption(raw_text)
-    article["instagram_caption_status"] = "success"
+    article.instagram_caption_raw = raw_text
+    article.instagram_caption = parse_instagram_caption(raw_text)
+    article.instagram_caption_status = "success"
 
     return article
 
@@ -275,14 +278,14 @@ def generate_instagram_caption(article):
 # Step 7-3. 선택된 기사 전체에 대해 인스타 캡션을 순차 생성합니다.
 def generate_instagram_captions(selected_articles):
     for article in selected_articles:
-        print(f"인스타 캡션 생성 중: {article['title'][:30]}...")
+        print(f"인스타 캡션 생성 중: {article.title[:30]}...")
         generate_instagram_caption(article)
 
     return selected_articles
 
 # Step 8-1. 인스타 캡션을 기반으로 SDXL 이미지 생성 프롬프트를 만듭니다.
 def build_sdxl_image_prompt(article):
-    step1_output = article.get("instagram_caption", "")
+    step1_output = article.instagram_caption
 
     return f"""[Persona]
 You are a Visual Director specializing in photojournalism. You transform text-based news summaries into highly optimized keyword-based prompts for Stable Diffusion XL (SDXL).
@@ -325,10 +328,10 @@ def generate_sdxl_image_prompt(article):
     if not api_key:
         raise RuntimeError(".env 파일에 GEMINI_API_KEY를 먼저 입력하세요.")
 
-    if not article.get("instagram_caption"):
-        article["sdxl_image_prompt_raw"] = ""
-        article["sdxl_image_prompt"] = ""
-        article["sdxl_image_prompt_status"] = "skipped_no_caption"
+    if not article.instagram_caption:
+        article.sdxl_image_prompt_raw = ""
+        article.sdxl_image_prompt = ""
+        article.sdxl_image_prompt_status = "skipped_no_caption"
         return article
 
     client = genai.Client(api_key=api_key)
@@ -341,17 +344,17 @@ def generate_sdxl_image_prompt(article):
 
     raw_text = response.text.strip()
 
-    article["sdxl_image_prompt_raw"] = raw_text
-    article["sdxl_image_prompt"] = parse_sdxl_image_prompt(raw_text)
-    article["sdxl_image_prompt_status"] = "success"
-
+    article.sdxl_image_prompt_raw = raw_text
+    article.sdxl_image_prompt = parse_sdxl_image_prompt(raw_text)
+    article.sdxl_image_prompt_status = "success"
+    
     return article
 
 
 # Step 8-3. 선택된 기사 전체에 대해 이미지 프롬프트를 순차 생성합니다.
 def generate_sdxl_image_prompts(selected_articles):
     for article in selected_articles:
-        print(f"SDXL 이미지 프롬프트 생성 중: {article['title'][:30]}...")
+        print(f"SDXL 이미지 프롬프트 생성 중: {article.title[:30]}...")
         generate_sdxl_image_prompt(article)
 
     return selected_articles

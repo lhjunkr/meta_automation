@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from config import get_int_env
 from history import count_today_published, is_already_published
 
+GRAPH_API_VERSION = "v19.0"
 
 def validate_meta_config():
     load_dotenv()
@@ -26,6 +27,55 @@ def validate_meta_config():
             ".env에 Meta 업로드 설정이 없습니다: " + ", ".join(missing_keys)
         )
 
+def fetch_meta_graph_object(object_id, access_token, fields):
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{object_id}"
+
+    response = requests.get(
+        url,
+        params={
+            "fields": fields,
+            "access_token": access_token,
+        },
+        timeout=30,
+    )
+
+    data = response.json()
+
+    if response.status_code >= 400:
+        raise RuntimeError(f"Meta Graph API 검증 실패: {data}")
+
+    return data
+
+def preflight_meta_publishing():
+    load_dotenv()
+    validate_meta_config()
+
+    meta_access_token = os.getenv("META_ACCESS_TOKEN")
+    ig_user_id = os.getenv("IG_USER_ID")
+    facebook_page_id = os.getenv("FACEBOOK_PAGE_ID")
+    facebook_page_access_token = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
+
+    print("Meta preflight 검증 중...")
+
+    instagram_account = fetch_meta_graph_object(
+        ig_user_id,
+        meta_access_token,
+        "id,username",
+    )
+    print(f" -> Instagram 계정 확인: {instagram_account.get('id')}")
+
+    facebook_page = fetch_meta_graph_object(
+        facebook_page_id,
+        facebook_page_access_token,
+        "id,name",
+    )
+    print(f" -> Facebook 페이지 확인: {facebook_page.get('name')}")
+
+    return {
+        "instagram_account_id": instagram_account.get("id", ""),
+        "facebook_page_id": facebook_page.get("id", ""),
+        "facebook_page_name": facebook_page.get("name", ""),
+    }
 
 def create_instagram_media_container(article):
     load_dotenv()
@@ -39,7 +89,7 @@ def create_instagram_media_container(article):
     if not image_url:
         raise RuntimeError("public_image_url이 없어 Instagram 컨테이너를 만들 수 없습니다.")
 
-    url = f"https://graph.facebook.com/v19.0/{ig_user_id}/media"
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{ig_user_id}/media"
 
     payload = {
         "image_url": image_url,
@@ -62,7 +112,7 @@ def publish_instagram_media(creation_id):
     access_token = os.getenv("META_ACCESS_TOKEN")
     ig_user_id = os.getenv("IG_USER_ID")
 
-    url = f"https://graph.facebook.com/v19.0/{ig_user_id}/media_publish"
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{ig_user_id}/media_publish"
 
     payload = {
         "creation_id": creation_id,
@@ -114,7 +164,7 @@ def publish_article_to_facebook_page(article):
         article["facebook_publish_error"] = "public_image_url이 없어 Facebook에 게시할 수 없습니다."
         return article
 
-    url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{page_id}/photos"
 
     payload = {
         "url": image_url,
@@ -167,7 +217,7 @@ def get_publish_delay_seconds(publish_index):
 
 
 def publish_to_social_channels(selected_articles):
-    validate_meta_config()
+    preflight_meta_publishing()
 
     published_articles = []
     max_daily_posts = get_int_env("MAX_DAILY_POSTS", 3)

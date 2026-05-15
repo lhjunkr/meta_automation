@@ -87,9 +87,9 @@ def clean_article_title(title):
     for breaking_news_prefix in ["[속보]", "【속보】", "(속보)", "속보"]:
         cleaned_title = cleaned_title.replace(breaking_news_prefix, "")
 
-    for unwanted_character in ["▯", "□", "☒", "×"]:
+    for unwanted_character in ["🚨", "⚠️", "✅", "📍", "🔎", "💡", "▯", "□", "☒", "×"]:
         cleaned_title = cleaned_title.replace(unwanted_character, "")
-
+        
     cleaned_title = re.sub(r"\s+", " ", cleaned_title).strip()
 
     if " - " in cleaned_title:
@@ -126,26 +126,31 @@ def render_news_image_overlay(article):
     image = apply_bottom_gradient(image)
     draw = ImageDraw.Draw(image)
 
+    badge_font = load_korean_font(38, bold=True)
     title_font = load_korean_font(55, bold=True)
     footer_font = load_korean_font(35)
 
     x = 75
-    title_y = 950
-    footer_y = 1165
+    badge_y = 875
+    title_y = 940
+    title_line_gap = 70
+    footer_gap = 22
     max_width = image.size[0] - (x * 2)
 
     title = extract_poster_title(article)
     footer = f"출처: {article.get('source', '')} | {now_kst().strftime('%Y.%m.%d')}"
 
+    draw.text((x, badge_y), "[속보]", fill="#FFFFFF", font=badge_font)
+
     title_lines = wrap_text(draw, title, title_font, max_width=max_width, max_lines=2)
     for idx, line in enumerate(title_lines):
-        y = title_y + (idx * 70)
+        y = title_y + (idx * title_line_gap)
 
         for dx, dy in [(0, 0), (1, 0), (0, 1), (1, 1), (2, 0), (0, 2)]:
             draw.text((x + dx, y + dy), line, fill="#FFFFFF", font=title_font)
 
+    footer_y = title_y + (len(title_lines) * title_line_gap) + footer_gap
     draw.text((x, footer_y), footer, fill=(221, 221, 221, 215), font=footer_font)
-
     final_path = input_path.with_name(f"{input_path.stem}_final{input_path.suffix}")
     image.convert("RGB").save(final_path, quality=95)
 

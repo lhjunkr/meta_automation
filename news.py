@@ -5,6 +5,11 @@ from pathlib import Path
 import requests
 import trafilatura
 from googlenewsdecoder import gnewsdecoder
+
+# pygooglenews imports feedparser 5.x, which still expects base64.decodestring.
+if not hasattr(base64, "decodestring"):
+    base64.decodestring = base64.decodebytes
+
 from pygooglenews import GoogleNews
 
 from constants import (
@@ -16,9 +21,6 @@ from models import Article
 
 # pygooglenews still imports feedparser 5.x, which expects this Python 2-era alias.
 # Define it before pygooglenews imports feedparser so GitHub Actions can run on Python 3.11.
-if not hasattr(base64, "decodestring"):
-    base64.decodestring = base64.decodebytes
-
 
 REQUEST_HEADERS = {
     "User-Agent": (

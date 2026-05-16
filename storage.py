@@ -49,6 +49,7 @@ def upload_image_to_r2(local_path, object_key):
     client = create_r2_client()
 
     try:
+        # Meta Graph API가 image_url을 다시 가져가므로 공개 URL에서 PNG로 인식되도록 Content-Type을 고정합니다.
         client.upload_file(
             str(local_path),
             bucket_name,
@@ -75,6 +76,7 @@ def upload_article_images_to_r2(selected_articles: list[Article], run_dir) -> li
             print(" -> 최종 이미지가 없어 R2 업로드를 건너뜁니다.")
             continue
 
+        # 날짜별 prefix를 사용해 Actions artifact와 R2 객체 경로를 같은 실행 단위로 추적합니다.
         object_key = f"{run_date}/article_{article.id}_final.png"
 
         try:

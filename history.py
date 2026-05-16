@@ -8,6 +8,7 @@ from time_utils import now_kst, today_kst
 
 
 def append_publish_history(selected_articles: list[Article], status: str = STATUS_READY) -> None:
+    # GitHub Actions runner의 기본 시간대와 무관하게 게시 이력은 운영 기준인 KST로 남깁니다.
     published_at = now_kst().isoformat(timespec="seconds")
 
     with open("history.jsonl", "a", encoding="utf-8") as f:
@@ -32,6 +33,7 @@ def count_today_published() -> int:
     if not history_path.exists():
         return 0
 
+    # 일일 게시 한도는 한국 계정 운영 시간 기준으로 계산합니다.
     today = today_kst()
     count = 0
 
@@ -84,6 +86,7 @@ def is_already_published(article: Article) -> bool:
             except json.JSONDecodeError:
                 continue
 
+            # Google 링크, 원문 링크, 공개 이미지 URL 중 하나라도 같으면 중복 게시로 간주합니다.
             if current_google_link and current_google_link == record.get("google_link"):
                 return True
 

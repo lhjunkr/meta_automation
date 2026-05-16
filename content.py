@@ -39,6 +39,7 @@ def select_best_articles(news_list):
 
     news_context = build_news_context(news_list)
 
+    # downstream parser가 ID만 읽도록 출력 형식을 고정해 Gemini 응답 흔들림을 줄입니다.
     prompt = f"""**Role:** Senior Strategic News Analyst & Professional News Curator.
 
 **Objective:** From the provided list of 30 news articles, select the most valuable articles for a Korean Instagram news account. Your goal is to identify stories that are timely, important, and likely to matter to Korean readers and business decision-makers.
@@ -170,6 +171,7 @@ def match_selected_articles(selected_result: str, news_list: list[dict]) -> list
         backup_article_data = news_by_id.get(item.get("backup_id"))
 
         if primary_article_data:
+            # backup_article을 Article 안에 같이 보관해 primary 실패 시 같은 카테고리 안에서만 재시도합니다.
             primary_article_data = primary_article_data.copy()
             primary_article_data["selection_rank"] = "primary"
             primary_article_data["backup_article"] = (
@@ -258,6 +260,7 @@ def generate_instagram_caption(article: Article) -> Article:
         raise RuntimeError(".env 파일에 GEMINI_API_KEY를 먼저 입력하세요.")
 
     if article.status != STATUS_SUCCESS or not article.body:
+        # 본문이 불완전하면 Gemini가 제목만 보고 사실을 보태는 위험이 있어 캡션 생성을 건너뜁니다.
         article.instagram_caption_raw = ""
         article.instagram_caption = ""
         article.instagram_caption_status = CAPTION_STATUS_SKIPPED_NO_BODY
@@ -334,6 +337,7 @@ def generate_sdxl_image_prompt(article: Article) -> Article:
         raise RuntimeError(".env 파일에 GEMINI_API_KEY를 먼저 입력하세요.")
 
     if not article.instagram_caption:
+        # 이미지 프롬프트는 최종 캡션 기준으로 만들기 때문에 캡션 없는 기사는 여기서 중단합니다.
         article.sdxl_image_prompt_raw = ""
         article.sdxl_image_prompt = ""
         article.sdxl_image_prompt_status = IMAGE_PROMPT_STATUS_SKIPPED_NO_CAPTION

@@ -110,6 +110,7 @@ def create_instagram_media_container(article: Article):
     if not image_url:
         raise RuntimeError("public_image_url이 없어 Instagram 컨테이너를 만들 수 없습니다.")
 
+    # Instagram은 컨테이너 생성과 publish 호출이 분리되어 있어 여기서는 media ID만 만듭니다.
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{ig_user_id}/media"
 
     payload = {
@@ -185,6 +186,7 @@ def publish_article_to_facebook_page(article: Article) -> Article:
         article.facebook_publish_error = "public_image_url이 없어 Facebook에 게시할 수 없습니다."
         return article
 
+    # Facebook Page 게시에는 IG 토큰이 아니라 Page 권한이 붙은 access token을 사용해야 합니다.
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{page_id}/photos"
 
     payload = {
@@ -227,6 +229,7 @@ def get_publish_delay_seconds(publish_index: int) -> int:
     )
     latest_first_post_minute = max(latest_first_post_minute, 0)
 
+    # 매일 같은 초에 게시하지 않도록 첫 게시만 윈도우 안에서 무작위로 분산합니다.
     first_post_delay_seconds = random.randint(
         0,
         latest_first_post_minute * 60,
@@ -277,6 +280,8 @@ def publish_to_social_channels(selected_articles: list[Article]) -> list[Article
         publish_article_to_instagram(article)
         publish_article_to_facebook_page(article)
 
+        # 현재 history는 양쪽 채널이 모두 성공한 기사만 기록합니다.
+        # 채널별 부분 성공 기록이 필요하면 history 스키마를 먼저 확장해야 합니다.
         if (
             article.instagram_publish_status == STATUS_SUCCESS
             and article.facebook_publish_status == STATUS_SUCCESS

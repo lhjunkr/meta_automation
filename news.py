@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 import base64
 import json
 from pathlib import Path
@@ -6,7 +7,8 @@ import requests
 import trafilatura
 from googlenewsdecoder import gnewsdecoder
 
-# pygooglenews imports feedparser 5.x, which still expects base64.decodestring.
+# pygooglenews가 불러오는 feedparser 5.x는 Python 3.11에서 사라진
+# base64.decodestring을 참조하므로, pygooglenews import 전에 호환 별칭을 만듭니다.
 if not hasattr(base64, "decodestring"):
     base64.decodestring = base64.decodebytes
 
@@ -19,9 +21,8 @@ from constants import (
 )
 from models import Article
 
-# pygooglenews still imports feedparser 5.x, which expects this Python 2-era alias.
-# Define it before pygooglenews imports feedparser so GitHub Actions can run on Python 3.11.
 
+# 일부 언론사는 기본 Python 요청을 차단하므로 브라우저에 가까운 헤더로 본문 수집 성공률을 높입니다.
 REQUEST_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -98,6 +99,7 @@ def fetch_top_news():
         added_count = 0
 
         for entry in entries:
+            # 같은 Google News 링크가 여러 섹션에 중복 노출될 수 있어 수집 단계에서 먼저 제거합니다.
             if entry.link in seen_links:
                 continue
 
@@ -151,6 +153,7 @@ def fetch_top_news():
 
 def resolve_article_url(google_link):
     try:
+        # Google News RSS 링크는 중계 URL이므로 원문 URL로 정화한 뒤 본문 수집에 사용합니다.
         decoded_result = gnewsdecoder(google_link, interval=1)
 
         if decoded_result.get("status"):

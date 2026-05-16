@@ -140,7 +140,7 @@ def render_news_image_overlay(article: Article) -> Article:
     footer_font = load_korean_font(35)
 
     x = 75
-    badge_y = 875
+    badge_y = 895   # [속보] 위치 설정
     title_y = 940
     title_line_gap = 70
     footer_gap = 22

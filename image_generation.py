@@ -21,7 +21,7 @@ class HuggingFaceImageModelConfig(TypedDict):
 HUGGINGFACE_IMAGE_MODELS: list[HuggingFaceImageModelConfig] = [
     {
         "model": "stabilityai/stable-diffusion-3.5-large-turbo",
-        "num_inference_steps": 8,
+        "num_inference_steps": 12,
         "guidance_scale": 7.5,
     },
     {

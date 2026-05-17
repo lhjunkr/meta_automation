@@ -1,4 +1,5 @@
 import os
+from typing import TypedDict
 
 from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
@@ -10,11 +11,31 @@ from constants import (
 )
 from models import Article
 
-HUGGINGFACE_IMAGE_MODELS = [
-    "stabilityai/stable-diffusion-3.5-large-turbo",
-    "stabilityai/stable-diffusion-xl-base-1.0",
-    "black-forest-labs/FLUX.1-schnell",
+
+class HuggingFaceImageModelConfig(TypedDict):
+    model: str
+    num_inference_steps: int
+    guidance_scale: float
+
+
+HUGGINGFACE_IMAGE_MODELS: list[HuggingFaceImageModelConfig] = [
+    {
+        "model": "stabilityai/stable-diffusion-3.5-large-turbo",
+        "num_inference_steps": 8,
+        "guidance_scale": 7.5,
+    },
+    {
+        "model": "stabilityai/stable-diffusion-xl-base-1.0",
+        "num_inference_steps": 30,
+        "guidance_scale": 7.5,
+    },
+    {
+        "model": "black-forest-labs/FLUX.1-schnell",
+        "num_inference_steps": 4,
+        "guidance_scale": 3.5,
+    },
 ]
+
 
 def generate_huggingface_image(article: Article, run_dir) -> Article:
     load_dotenv()
@@ -37,7 +58,9 @@ def generate_huggingface_image(article: Article, run_dir) -> Article:
 
     # 외부 이미지 provider는 독립적으로 timeout이 날 수 있으므로,
     # 기사 실패 처리 전에 다음 모델을 시도해 카테고리 backup 기회를 보존합니다.
-    for image_model in HUGGINGFACE_IMAGE_MODELS:
+    for image_model_config in HUGGINGFACE_IMAGE_MODELS:
+        image_model = image_model_config["model"]
+
         try:
             print(f" -> 이미지 모델 시도: {image_model}")
 
@@ -50,8 +73,8 @@ def generate_huggingface_image(article: Article, run_dir) -> Article:
                 model=image_model,
                 width=1024,
                 height=1280,
-                num_inference_steps=30,
-                guidance_scale=7.5,
+                num_inference_steps=image_model_config["num_inference_steps"],
+                guidance_scale=image_model_config["guidance_scale"],
             )
 
             image.save(image_path)
@@ -72,6 +95,7 @@ def generate_huggingface_image(article: Article, run_dir) -> Article:
     article.image_generation_error = last_error
 
     return article
+
 
 def generate_huggingface_images(selected_articles: list[Article], run_dir) -> list[Article]:
     for article in selected_articles:

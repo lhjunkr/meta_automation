@@ -5,7 +5,9 @@ from pathlib import Path
 
 import requests
 import trafilatura
+from bs4 import BeautifulSoup
 from googlenewsdecoder import gnewsdecoder
+from readability import Document
 
 # pygooglenews가 불러오는 feedparser 5.x는 Python 3.11에서 사라진
 # base64.decodestring을 참조하므로, pygooglenews import 전에 호환 별칭을 만듭니다.
@@ -21,6 +23,8 @@ from constants import (
 )
 from models import Article
 
+
+MIN_ARTICLE_BODY_LENGTH = 300
 
 # 일부 언론사는 기본 Python 요청을 차단하므로 브라우저에 가까운 헤더로 본문 수집 성공률을 높입니다.
 REQUEST_HEADERS = {
@@ -177,6 +181,70 @@ def resolve_selected_article_links(selected_articles: list[Article]) -> list[Art
     return selected_articles
 
 
+def extract_body_with_trafilatura(html: str, url: str) -> str:
+    body = trafilatura.extract(
+        html,
+        url=url,
+        include_comments=False,
+        include_tables=False,
+    )
+
+    return body or ""
+
+
+def extract_body_with_readability(html: str) -> str:
+    document = Document(html)
+    summary_html = document.summary()
+
+    soup = BeautifulSoup(summary_html, "html.parser")
+    return soup.get_text("\n", strip=True)
+
+
+def extract_body_with_beautifulsoup(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+
+    for tag in soup(["script", "style", "noscript", "header", "footer", "nav", "aside"]):
+        tag.decompose()
+
+    text_blocks = []
+
+    for tag in soup.find_all(["article", "main", "section", "p"]):
+        text = tag.get_text(" ", strip=True)
+
+        if len(text) >= 40:
+            text_blocks.append(text)
+
+    return "\n".join(text_blocks)
+
+
+def extract_article_body(html: str, url: str) -> tuple[str, str]:
+    extractors = [
+        ("trafilatura", lambda: extract_body_with_trafilatura(html, url)),
+        ("readability", lambda: extract_body_with_readability(html)),
+        ("beautifulsoup", lambda: extract_body_with_beautifulsoup(html)),
+    ]
+
+    last_error = ""
+
+    for extractor_name, extractor in extractors:
+        try:
+            body = extractor()
+        except Exception as e:
+            last_error = str(e)
+            print(f"본문 추출기 실패: {extractor_name} ({e})")
+            continue
+
+        body = body.strip()
+
+        if len(body) >= MIN_ARTICLE_BODY_LENGTH:
+            print(f" -> 본문 추출 완료({extractor_name}): {len(body)}자")
+            return body, STATUS_SUCCESS
+
+        print(f" -> 본문이 너무 짧음({extractor_name}): {len(body)}자")
+
+    return "", f"extract_failed:{last_error}" if last_error else "extract_failed"
+
+
 def fetch_article_body(resolved_link: str) -> tuple[str, str]:
     try:
         response = requests.get(
@@ -191,25 +259,7 @@ def fetch_article_body(resolved_link: str) -> tuple[str, str]:
         print(f"본문 페이지 다운로드 실패: {resolved_link} ({e})")
         return "", ARTICLE_STATUS_DOWNLOAD_FAILED
 
-    try:
-        body = trafilatura.extract(
-            response.text,
-            url=resolved_link,
-            include_comments=False,
-            include_tables=False,
-        )
-    except Exception as extraction_error:
-        print(f"본문 추출 실패: {resolved_link} ({extraction_error})")
-        return "", "body_extract_failed"
-
-    body = body or ""
-
-    if len(body.strip()) < 300:
-        print(" -> 본문 추출 실패 또는 본문이 너무 짧습니다.")
-        return body, "extract_failed"
-
-    print(f" -> 본문 추출 완료: {len(body.strip())}자")
-    return body, STATUS_SUCCESS
+    return extract_article_body(response.text, resolved_link)
 
 
 def fetch_selected_article_bodies(selected_articles: list[Article]) -> list[Article]:

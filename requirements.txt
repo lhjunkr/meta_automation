@@ -8,3 +8,5 @@ huggingface_hub
 Pillow
 boto3
 justext==3.0.1
+beautifulsoup4
+readability-lxml

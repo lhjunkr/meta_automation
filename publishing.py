@@ -17,6 +17,7 @@ from facebook_publishing import publish_article_to_facebook_page
 from history import count_today_published, is_already_published
 from instagram_publishing import publish_article_to_instagram
 from models import Article
+from threads_publishing import publish_article_to_threads
 
 GRAPH_API_VERSION = "v19.0"
 
@@ -29,6 +30,8 @@ def validate_meta_config() -> None:
         "IG_USER_ID",
         "FACEBOOK_PAGE_ID",
         "FACEBOOK_PAGE_ACCESS_TOKEN",
+        "THREADS_ACCESS_TOKEN",
+        "THREADS_USER_ID",
     ]
 
     missing_keys = [key for key in required_keys if not os.getenv(key)]
@@ -59,6 +62,26 @@ def fetch_meta_graph_object(object_id: str, access_token: str, fields: str) -> d
     return data
 
 
+def fetch_threads_graph_object(object_id: str, access_token: str, fields: str) -> dict:
+    url = f"https://graph.threads.net/v1.0/{object_id}"
+
+    response = requests.get(
+        url,
+        params={
+            "fields": fields,
+            "access_token": access_token,
+        },
+        timeout=30,
+    )
+
+    data = response.json()
+
+    if response.status_code >= 400:
+        raise RuntimeError(f"Threads API 검증 실패: {data}")
+
+    return data
+
+
 def preflight_meta_publishing() -> dict:
     load_dotenv()
     validate_meta_config()
@@ -67,12 +90,16 @@ def preflight_meta_publishing() -> dict:
     ig_user_id = os.getenv("IG_USER_ID")
     facebook_page_id = os.getenv("FACEBOOK_PAGE_ID")
     facebook_page_access_token = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
+    threads_access_token = os.getenv("THREADS_ACCESS_TOKEN")
+    threads_user_id = os.getenv("THREADS_USER_ID")
 
     if (
         not meta_access_token
         or not ig_user_id
         or not facebook_page_id
         or not facebook_page_access_token
+        or not threads_access_token
+        or not threads_user_id
     ):
         raise RuntimeError("Meta preflight에 필요한 환경변수가 없습니다.")
 
@@ -93,10 +120,19 @@ def preflight_meta_publishing() -> dict:
     )
     print(f" -> Facebook 페이지 확인: {facebook_page.get('name')}")
 
+    threads_account = fetch_threads_graph_object(
+        threads_user_id,
+        threads_access_token,
+        "id,username",
+    )
+    print(f" -> Threads 계정 확인: {threads_account.get('username')}")
+
     return {
         "instagram_account_id": instagram_account.get("id", ""),
         "facebook_page_id": facebook_page.get("id", ""),
         "facebook_page_name": facebook_page.get("name", ""),
+        "threads_user_id": threads_account.get("id", ""),
+        "threads_username": threads_account.get("username", ""),
     }
 
 
@@ -160,12 +196,14 @@ def publish_to_social_channels(selected_articles: list[Article]) -> list[Article
 
         publish_article_to_instagram(article)
         publish_article_to_facebook_page(article)
+        publish_article_to_threads(article)
 
-        # 현재 history는 양쪽 채널이 모두 성공한 기사만 기록합니다.
+        # 현재 history는 모든 게시 채널이 성공한 기사만 기록합니다.
         # 채널별 부분 성공 기록이 필요하면 history 스키마를 먼저 확장해야 합니다.
         if (
             article.instagram_publish_status == STATUS_SUCCESS
             and article.facebook_publish_status == STATUS_SUCCESS
+            and article.threads_publish_status == STATUS_SUCCESS
         ):
             article.publish_status = STATUS_PUBLISHED
             published_articles.append(article)

@@ -45,6 +45,10 @@ class Article:
     facebook_publish_status: str = ""
     facebook_post_id: str = ""
     facebook_publish_error: str = ""
+    
+    threads_publish_status: str = ""
+    threads_post_id: str = ""
+    threads_publish_error: str = ""
 
     publish_status: str = ""
 
@@ -103,6 +107,9 @@ class Article:
             facebook_publish_status=article_data.get("facebook_publish_status", ""),
             facebook_post_id=article_data.get("facebook_post_id", ""),
             facebook_publish_error=article_data.get("facebook_publish_error", ""),
+            threads_publish_status=article_data.get("threads_publish_status", ""),
+            threads_post_id=article_data.get("threads_post_id", ""),
+            threads_publish_error=article_data.get("threads_publish_error", ""),
             publish_status=article_data.get("publish_status", ""),
             extra_fields=extra_fields,
         )
@@ -146,6 +153,9 @@ class Article:
                 "facebook_publish_status": self.facebook_publish_status,
                 "facebook_post_id": self.facebook_post_id,
                 "facebook_publish_error": self.facebook_publish_error,
+                "threads_publish_status": self.threads_publish_status,
+                "threads_post_id": self.threads_post_id,
+                "threads_publish_error": self.threads_publish_error,
                 "publish_status": self.publish_status,
             }
         )

@@ -22,6 +22,8 @@ def append_publish_history(selected_articles: list[Article], status: str = STATU
                 "google_link": article.google_link,
                 "resolved_link": article.resolved_link,
                 "instagram_post_id": article.instagram_post_id,
+                "facebook_post_id": article.facebook_post_id,
+                "threads_post_id": article.threads_post_id,
                 "final_image_path": article.final_image_path,
             }
 

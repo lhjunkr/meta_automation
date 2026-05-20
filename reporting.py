@@ -35,6 +35,9 @@ def build_article_failure_summary(article: Article) -> list[str]:
 
     if article.r2_upload_status and article.r2_upload_status != STATUS_SUCCESS:
         failure_reasons.append(f"r2:{article.r2_upload_status}")
+        
+    if article.threads_publish_status and article.threads_publish_status != STATUS_SUCCESS:
+        failure_reasons.append(f"threads:{article.threads_publish_status}")
 
     if article.publish_status and article.publish_status not in {
         STATUS_PUBLISHED,

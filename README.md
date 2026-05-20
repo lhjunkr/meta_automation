@@ -1,6 +1,6 @@
 # Meta Automation
 
-Meta Automation collects candidate articles from Google News, selects three articles with Gemini, generates Korean captions and poster images, uploads the images to Cloudflare R2, and publishes the final posts to Instagram and a Facebook Page.
+Meta Automation collects candidate articles from Google News, selects three articles with Gemini, generates Korean captions and poster images, uploads the images to Cloudflare R2, and publishes the final posts to Instagram, a Facebook Page, and Threads.
 
 The production runtime is GitHub Actions. The workflow runs automatically every day at 06:23 KST, and it can also be started manually from the Actions tab.
 
@@ -33,8 +33,8 @@ The production runtime is GitHub Actions. The workflow runs automatically every 
 8. Selected articles are normalized into the `Article` dataclass.
 9. The pipeline resolves source URLs, extracts article bodies, generates captions, generates image prompts, creates images, renders poster overlays, and uploads final images to R2.
 10. If a primary article does not pass the completion check, the backup article for the same category is processed.
-11. Before publishing, Meta preflight checks verify Instagram and Facebook Page access.
-12. The automation publishes to Instagram and Facebook Page, then writes successful publish history to `history.jsonl`.
+11. Before publishing, preflight checks verify Instagram, Facebook Page, and Threads access.
+12. The automation publishes to Instagram, Facebook Page, and Threads, then writes publish history to `history.jsonl`.
 13. Runtime outputs and failure summaries are sent by email and uploaded as GitHub Actions artifacts.
 14. On successful workflow completion, GitHub Actions commits the updated `history.jsonl` file back to `main`.
 
@@ -53,7 +53,10 @@ The production runtime is GitHub Actions. The workflow runs automatically every 
 | `image_rendering.py` | News poster overlay rendering |
 | `storage.py` | Cloudflare R2 upload |
 | `pipeline.py` | Content pipeline orchestration, completion checks, and backup retry |
-| `publishing.py` | Meta preflight, Instagram publishing, and Facebook Page publishing |
+| `publishing.py` | Publish orchestration, preflight checks, daily limits, and duplicate prevention |
+| `instagram_publishing.py` | Instagram media container polling and publish requests |
+| `facebook_publishing.py` | Facebook Page photo publish requests |
+| `threads_publishing.py` | Threads media container polling and publish requests |
 | `outputs.py` | Runtime output files |
 | `reporting.py` | Failure summary generation |
 | `history.py` | Publish history and duplicate prevention |
@@ -80,6 +83,9 @@ image_path
 final_image_path
 public_image_url
 publish_status
+instagram_publish_status
+facebook_publish_status
+threads_publish_status
 ```
 
 `Article.from_dict()` and `Article.to_dict()` keep compatibility with existing outputs and external inputs. Unknown fields are preserved in `extra_fields` so schema changes do not silently drop data.
@@ -121,10 +127,13 @@ Preflight verifies:
 
 - `META_ACCESS_TOKEN` can access `IG_USER_ID`
 - `FACEBOOK_PAGE_ACCESS_TOKEN` can access `FACEBOOK_PAGE_ID`
+- `THREADS_ACCESS_TOKEN` can access `THREADS_USER_ID`
 
-If preflight fails, the automation does not create Instagram media containers or Facebook photo publish requests.
+If preflight fails, the automation does not create Instagram, Facebook, or Threads publish requests.
 
 For long-term operation, use a Meta Business System User token with the required Page and Instagram assets assigned. The current GitHub Secrets split the Instagram and Facebook credentials intentionally so each channel can be rotated or debugged independently.
+
+Threads uses a separate long-lived Threads token. It should be stored in `THREADS_ACCESS_TOKEN` and refreshed before expiration.
 
 ## Runtime Outputs
 
@@ -150,13 +159,13 @@ images/
 
 `failure_report.txt` is also included in the email body. `outputs/**/*.txt` files are attached to the report email and uploaded as GitHub Actions artifacts.
 
-Successful publish history is appended to:
+Publish history is appended to:
 
 ```text
 history.jsonl
 ```
 
-This file is used for duplicate prevention and daily post limit calculation, so the workflow commits it back to `main` after a successful run.
+This file is used for duplicate prevention and daily post limit calculation, so the workflow commits it back to `main` after a successful run. If at least one social channel publishes successfully but another channel fails, the article is also written to history with `failed` status to prevent duplicate reposts on the successful channel.
 
 ## Required GitHub Secrets
 
@@ -198,6 +207,15 @@ FACEBOOK_PAGE_ACCESS_TOKEN = Facebook Page access token from /me/accounts
 ```
 
 The System User must have access to the Facebook Page, Instagram Business Account, and Meta app used by the automation. Required permissions typically include `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `pages_manage_metadata`, `instagram_basic`, and `instagram_content_publish`.
+
+### Threads
+
+```text
+THREADS_ACCESS_TOKEN
+THREADS_USER_ID
+```
+
+`THREADS_ACCESS_TOKEN` should be a long-lived Threads token for the target Threads profile. `THREADS_USER_ID` is the Threads profile ID returned by the Threads Graph API.
 
 ### Email Report
 
@@ -252,6 +270,9 @@ IG_USER_ID=
 FACEBOOK_PAGE_ID=
 FACEBOOK_PAGE_ACCESS_TOKEN=
 
+THREADS_ACCESS_TOKEN=
+THREADS_USER_ID=
+
 MAX_DAILY_POSTS=3
 UPLOAD_WINDOW_MINUTES=15
 POST_SPACING_MINUTES=5
@@ -264,7 +285,7 @@ Production values are managed through GitHub Actions Secrets. If local `.env` va
 Syntax check:
 
 ```bash
-python3 -m py_compile main.py models.py constants.py reporting.py pipeline.py image_generation.py content.py news.py image_rendering.py storage.py outputs.py publishing.py history.py config.py time_utils.py
+python3 -m py_compile main.py models.py constants.py reporting.py pipeline.py image_generation.py content.py news.py image_rendering.py storage.py outputs.py publishing.py history.py config.py time_utils.py instagram_publishing.py facebook_publishing.py threads_publishing.py
 ```
 
 Static checks:
@@ -293,11 +314,11 @@ python3 -m unittest discover -s tests
 - The workflow runs on GitHub-hosted runners, so the local laptop does not need to be online.
 - The scheduled runtime is 06:23 KST.
 - Output folders, poster dates, and daily post limits use KST.
-- With `DRY_RUN=false`, manual workflow dispatches publish real Instagram and Facebook posts.
+- With `DRY_RUN=false`, manual workflow dispatches publish real Instagram, Facebook, and Threads posts.
 - Publish timing is controlled by `UPLOAD_WINDOW_MINUTES` and `POST_SPACING_MINUTES`.
 - Some publishers may return `401`, `402`, or `403` during article body download.
 - If `trafilatura` cannot extract enough body text, the article fails and the pipeline moves to the backup article.
-- If Meta returns `OAuthException`, `code 190`, or `Session has expired`, check the System User token, Page/Instagram asset assignment, and GitHub Secrets first.
+- If Meta returns `OAuthException`, `code 190`, or `Session has expired`, check the System User token, Threads token, asset assignments, and GitHub Secrets first.
 
 ## Common Commands
 
@@ -342,6 +363,7 @@ This project uses official APIs:
 - Hugging Face Inference API
 - Cloudflare R2 S3-compatible API
 - Meta Graph API
+- Threads Graph API
 - SMTP
 
 Operators are responsible for complying with publisher policies, provider terms, Meta Platform policies, and copyright requirements.

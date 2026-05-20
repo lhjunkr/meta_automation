@@ -12,6 +12,7 @@ class ArticleModelTest(unittest.TestCase):
                 "title": "Test title",
                 "source": "Test source",
                 "google_link": "https://example.com/news",
+                "threads_post_id": "threads-123",
                 "unknown_runtime_field": "keep-me",
                 "backup_article": {
                     "id": 2,
@@ -27,6 +28,7 @@ class ArticleModelTest(unittest.TestCase):
 
         self.assertEqual(article.id, 1)
         self.assertEqual(article.category, "경제(US)")
+        self.assertEqual(article.threads_post_id, "threads-123")
         backup_article = article.backup_article
 
         self.assertIsNotNone(backup_article)

@@ -25,6 +25,7 @@ def append_publish_history(selected_articles: list[Article], status: str = STATU
                 "facebook_post_id": article.facebook_post_id,
                 "threads_post_id": article.threads_post_id,
                 "final_image_path": article.final_image_path,
+                "public_image_url": article.public_image_url,
             }
 
             f.write(json.dumps(record, ensure_ascii=False) + "\n")

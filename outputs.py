@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 from models import Article
-from reporting import build_run_failure_report
+from reporting import build_article_failure_summary, build_run_failure_report
 from time_utils import now_kst, today_kst
 
 
@@ -54,10 +54,47 @@ def save_failed_categories(failed_categories: list[dict], run_dir) -> None:
             f.write("\n---\n\n")
 
 
-def save_failure_report(selected_articles: list[Article], run_dir) -> None:
+def save_failure_report(
+    selected_articles: list[Article],
+    run_dir,
+    failed_categories: list[dict] | None = None,
+) -> None:
     # 실패 이메일 본문에 바로 포함할 수 있도록 요약을 텍스트 산출물로 남깁니다.
     with open(run_dir / "failure_report.txt", "w", encoding="utf-8") as f:
-        f.write(build_run_failure_report(selected_articles))
+        f.write(build_run_failure_report(selected_articles, failed_categories))
+
+
+def append_publish_failure_report(selected_articles: list[Article], run_dir) -> None:
+    publish_failure_prefixes = ("instagram:", "facebook:", "threads:", "publish:")
+    lines = ["", "Publish Failure Summary", ""]
+    failed_articles = []
+
+    for article in selected_articles:
+        publish_failure_reasons = [
+            reason
+            for reason in build_article_failure_summary(article)
+            if reason.startswith(publish_failure_prefixes)
+        ]
+
+        if not publish_failure_reasons:
+            continue
+
+        failed_articles.append(article)
+        lines.extend(
+            [
+                f"ID: {article.id}",
+                f"Category: {article.category}",
+                f"Title: {article.title}",
+                f"Reasons: {', '.join(publish_failure_reasons)}",
+                "",
+            ]
+        )
+
+    if not failed_articles:
+        lines.append("No publish failures detected.")
+
+    with open(run_dir / "failure_report.txt", "a", encoding="utf-8") as f:
+        f.write("\n".join(lines).rstrip() + "\n")
 
 
 def save_generated_images(selected_articles: list[Article], run_dir) -> None:

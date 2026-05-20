@@ -1,8 +1,11 @@
+import json
+import os
 import unittest
+from tempfile import TemporaryDirectory
 
-from constants import STATUS_SUCCESS
+from constants import STATUS_FAILED, STATUS_SUCCESS
 from models import Article
-from pipeline import is_article_complete
+from pipeline import handle_publish_results, is_article_complete
 
 
 class PipelineTest(unittest.TestCase):
@@ -36,6 +39,28 @@ class PipelineTest(unittest.TestCase):
         article.public_image_url = ""
 
         self.assertFalse(is_article_complete(article))
+
+    def test_handle_publish_results_records_partial_channel_success_as_failed(self):
+        article = self.build_complete_article()
+        article.instagram_publish_status = STATUS_SUCCESS
+        article.facebook_publish_status = ""
+        article.threads_publish_status = ""
+
+        original_cwd = os.getcwd()
+
+        with TemporaryDirectory() as temp_dir:
+            os.chdir(temp_dir)
+
+            try:
+                handle_publish_results([article])
+
+                with open("history.jsonl", encoding="utf-8") as history_file:
+                    history_record = json.loads(history_file.readline())
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertEqual(history_record["status"], STATUS_FAILED)
+        self.assertEqual(history_record["instagram_post_id"], article.instagram_post_id)
 
 
 if __name__ == "__main__":

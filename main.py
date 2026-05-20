@@ -12,12 +12,13 @@ from content import (
 )
 from news import fetch_top_news
 from outputs import (
+    append_publish_failure_report,
     create_run_dir,
     save_selected_articles,
     save_selected_news,
 )
 from pipeline import (
-    handle_publish_success,
+    handle_publish_results,
     process_content_pipeline,
     retry_failed_categories_with_backup,
 )
@@ -53,12 +54,13 @@ if __name__ == "__main__":
         save_selected_articles(selected_articles, run_dir)
 
         if is_dry_run():
-            print("[DRY_RUN] 실제 인스타그램/페이스북 업로드를 건너뜁니다.")
-            published_articles = []
+            print("[DRY_RUN] 실제 인스타그램/페이스북/스레드 업로드를 건너뜁니다.")
         else:
-            published_articles = publish_to_social_channels(selected_articles)
-            handle_publish_success(published_articles)
-
+            publish_to_social_channels(selected_articles)
+            # 게시 후 상태를 다시 저장해야 이메일/아티팩트에 채널별 성공·실패가 남습니다.
+            save_selected_articles(selected_articles, run_dir)
+            append_publish_failure_report(selected_articles, run_dir)
+            handle_publish_results(selected_articles)
 
         print("\n[완료] 오늘 콘텐츠 생성 파이프라인이 끝났습니다.")
         print(f"산출물 저장 위치: {run_dir}")

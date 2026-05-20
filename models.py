@@ -45,7 +45,7 @@ class Article:
     facebook_publish_status: str = ""
     facebook_post_id: str = ""
     facebook_publish_error: str = ""
-    
+
     threads_publish_status: str = ""
     threads_post_id: str = ""
     threads_publish_error: str = ""

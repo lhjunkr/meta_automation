@@ -6,6 +6,18 @@ from constants import (
 from models import Article
 
 
+def build_category_failure_summary(failed_categories: list[dict]) -> list[str]:
+    return [
+        (
+            f"category:{item.get('category', '')} "
+            f"primary:{item.get('primary_id', '')} "
+            f"backup:{item.get('backup_id', '')} "
+            f"reason:{item.get('reason', '')}"
+        )
+        for item in failed_categories
+    ]
+
+
 def build_article_failure_summary(article: Article) -> list[str]:
     failure_reasons = []
 
@@ -35,8 +47,23 @@ def build_article_failure_summary(article: Article) -> list[str]:
 
     if article.r2_upload_status and article.r2_upload_status != STATUS_SUCCESS:
         failure_reasons.append(f"r2:{article.r2_upload_status}")
-        
-    if article.threads_publish_status and article.threads_publish_status != STATUS_SUCCESS:
+
+    if (
+        article.instagram_publish_status
+        and article.instagram_publish_status != STATUS_SUCCESS
+    ):
+        failure_reasons.append(f"instagram:{article.instagram_publish_status}")
+
+    if (
+        article.facebook_publish_status
+        and article.facebook_publish_status != STATUS_SUCCESS
+    ):
+        failure_reasons.append(f"facebook:{article.facebook_publish_status}")
+
+    if (
+        article.threads_publish_status
+        and article.threads_publish_status != STATUS_SUCCESS
+    ):
         failure_reasons.append(f"threads:{article.threads_publish_status}")
 
     if article.publish_status and article.publish_status not in {
@@ -48,10 +75,22 @@ def build_article_failure_summary(article: Article) -> list[str]:
     return failure_reasons
 
 
-def build_run_failure_report(selected_articles: list[Article]) -> str:
+def build_run_failure_report(
+    selected_articles: list[Article],
+    failed_categories: list[dict] | None = None,
+) -> str:
     lines = ["Failure Summary", ""]
 
     failed_articles = []
+    category_failure_reasons = build_category_failure_summary(failed_categories or [])
+
+    if category_failure_reasons:
+        lines.extend(["Category Failures", ""])
+
+        for category_failure_reason in category_failure_reasons:
+            lines.extend([category_failure_reason, ""])
+
+        lines.extend(["Article Failures", ""])
 
     for article in selected_articles:
         failure_reasons = build_article_failure_summary(article)
@@ -72,7 +111,7 @@ def build_run_failure_report(selected_articles: list[Article]) -> str:
             ]
         )
 
-    if not failed_articles:
+    if not failed_articles and not category_failure_reasons:
         return "Failure Summary\n\nNo article-level failures detected.\n"
 
     return "\n".join(lines).rstrip() + "\n"

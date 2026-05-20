@@ -1,4 +1,4 @@
-from constants import STATUS_PUBLISHED, STATUS_SUCCESS
+from constants import STATUS_FAILED, STATUS_PUBLISHED, STATUS_SUCCESS
 from content import generate_instagram_captions, generate_sdxl_image_prompts
 from history import append_publish_history
 from image_generation import generate_huggingface_images
@@ -90,10 +90,44 @@ def retry_failed_categories_with_backup(selected_articles: list[Article], run_di
             )
 
     save_failed_categories(failed_categories, run_dir)
-    save_failure_report(final_articles, run_dir)
+    # 최종 게시 후보에서 빠진 카테고리 실패도 이메일 리포트에 포함합니다.
+    save_failure_report(final_articles, run_dir, failed_categories)
 
     return final_articles
 
-def handle_publish_success(published_articles: list[Article]) -> None:
-    append_publish_history(published_articles, status=STATUS_PUBLISHED)
+
+def has_all_channel_publish_success(article: Article) -> bool:
+    return (
+        article.instagram_publish_status == STATUS_SUCCESS
+        and article.facebook_publish_status == STATUS_SUCCESS
+        and article.threads_publish_status == STATUS_SUCCESS
+    )
+
+
+def has_any_channel_publish_success(article: Article) -> bool:
+    return (
+        article.instagram_publish_status == STATUS_SUCCESS
+        or article.facebook_publish_status == STATUS_SUCCESS
+        or article.threads_publish_status == STATUS_SUCCESS
+    )
+
+
+def handle_publish_results(selected_articles: list[Article]) -> None:
+    published_articles = [
+        article for article in selected_articles if has_all_channel_publish_success(article)
+    ]
+    partially_published_articles = [
+        article
+        for article in selected_articles
+        if has_any_channel_publish_success(article)
+        and not has_all_channel_publish_success(article)
+    ]
+
+    if published_articles:
+        append_publish_history(published_articles, status=STATUS_PUBLISHED)
+
+    if partially_published_articles:
+        # 일부 채널이라도 실제 게시가 끝난 기사는 다음 실행에서 중복 게시되지 않도록 이력에 남깁니다.
+        append_publish_history(partially_published_articles, status=STATUS_FAILED)
+
     cleanup_old_outputs(keep_days=3)

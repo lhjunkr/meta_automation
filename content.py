@@ -3,13 +3,17 @@ import os
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from huggingface_hub import InferenceClient
 
 from constants import (
     CAPTION_STATUS_SKIPPED_NO_BODY,
     IMAGE_PROMPT_STATUS_SKIPPED_NO_CAPTION,
+    STATUS_FAILED,
     STATUS_SUCCESS,
 )
 from models import Article
+
+HF_TEXT_MODEL = "Qwen/Qwen2.5-72B-Instruct"
 
 
 def build_news_context(news_list):
@@ -131,6 +135,7 @@ Backup ID: [Article ID]
 
     return (response.text or "").strip()
 
+
 def parse_selected_ids(selected_result):
     selected_items: list[dict] = []
     current_item: dict = {}
@@ -191,7 +196,8 @@ def match_selected_articles(selected_result: str, news_list: list[dict]) -> list
 
     return selected_articles
 
-# Step 7-1. 기사 본문을 인스타 캡션으로 바꾸기 위한 Gemini 프롬프트를 만듭니다.
+
+# Step 7-1. 기사 본문을 인스타 캡션으로 바꾸기 위한 프롬프트를 만듭니다.
 def build_instagram_caption_prompt(article: Article) -> str:
     return f"""**Role:** Professional Korean Social Media News Editor.
 
@@ -241,7 +247,8 @@ Examples: #경제, #국제, #정치, #기술, #사회
 - Source: {article.source}
 - Body: {article.body}"""
 
-# Step 7-1a. Gemini 응답에서 실제 캡션 영역만 분리합니다.
+
+# Step 7-1a. 모델 응답에서 실제 캡션 영역만 분리합니다.
 def parse_instagram_caption(raw_text):
     marker = "===KOREAN_CAPTION==="
 
@@ -251,20 +258,10 @@ def parse_instagram_caption(raw_text):
     return raw_text.strip()
 
 
-# Step 7-2. 기사 1개에 대해 한국어 인스타 캡션을 생성합니다.
-def generate_instagram_caption(article: Article) -> Article:
-    load_dotenv()
-
+def generate_instagram_caption_with_gemini(article: Article) -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError(".env 파일에 GEMINI_API_KEY를 먼저 입력하세요.")
-
-    if article.status != STATUS_SUCCESS or not article.body:
-        # 본문이 불완전하면 Gemini가 제목만 보고 사실을 보태는 위험이 있어 캡션 생성을 건너뜁니다.
-        article.instagram_caption_raw = ""
-        article.instagram_caption = ""
-        article.instagram_caption_status = CAPTION_STATUS_SKIPPED_NO_BODY
-        return article
 
     client = genai.Client(api_key=api_key)
 
@@ -274,7 +271,62 @@ def generate_instagram_caption(article: Article) -> Article:
         config=types.GenerateContentConfig(temperature=0.7),
     )
 
-    raw_text = (response.text or "").strip()
+    return (response.text or "").strip()
+
+
+def generate_instagram_caption_with_qwen(article: Article) -> str:
+    hf_token = os.getenv("HF_TOKEN")
+    if not hf_token:
+        raise RuntimeError(".env 파일에 HF_TOKEN을 먼저 입력하세요.")
+
+    client = InferenceClient(token=hf_token)
+
+    response = client.chat_completion(
+        model=HF_TEXT_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a professional Korean social media news editor. "
+                    "Follow the requested output format exactly. Do not invent facts."
+                ),
+            },
+            {
+                "role": "user",
+                "content": build_instagram_caption_prompt(article),
+            },
+        ],
+        temperature=0.7,
+        max_tokens=700,
+    )
+
+    return response.choices[0].message.content or ""
+
+
+# Step 7-2. 기사 1개에 대해 한국어 인스타 캡션을 생성합니다.
+def generate_instagram_caption(article: Article) -> Article:
+    load_dotenv()
+
+    if article.status != STATUS_SUCCESS or not article.body:
+        # 본문이 불완전하면 모델이 제목만 보고 사실을 보태는 위험이 있어 캡션 생성을 건너뜁니다.
+        article.instagram_caption_raw = ""
+        article.instagram_caption = ""
+        article.instagram_caption_status = CAPTION_STATUS_SKIPPED_NO_BODY
+        return article
+
+    try:
+        raw_text = generate_instagram_caption_with_gemini(article)
+    except Exception as gemini_error:
+        print(f" -> Gemini 캡션 생성 실패, Qwen fallback 시도: {gemini_error}")
+
+        try:
+            raw_text = generate_instagram_caption_with_qwen(article)
+        except Exception as qwen_error:
+            article.instagram_caption_raw = ""
+            article.instagram_caption = ""
+            article.instagram_caption_status = STATUS_FAILED
+            print(f" -> Qwen 캡션 생성 실패: {qwen_error}")
+            return article
 
     article.instagram_caption_raw = raw_text
     article.instagram_caption = parse_instagram_caption(raw_text)
@@ -290,6 +342,7 @@ def generate_instagram_captions(selected_articles: list[Article]) -> list[Articl
         generate_instagram_caption(article)
 
     return selected_articles
+
 
 # Step 8-1. 인스타 캡션을 기반으로 SDXL 이미지 생성 프롬프트를 만듭니다.
 def build_sdxl_image_prompt(article: Article) -> str:
@@ -356,7 +409,7 @@ def generate_sdxl_image_prompt(article: Article) -> Article:
     article.sdxl_image_prompt_raw = raw_text
     article.sdxl_image_prompt = parse_sdxl_image_prompt(raw_text)
     article.sdxl_image_prompt_status = STATUS_SUCCESS
-    
+
     return article
 
 

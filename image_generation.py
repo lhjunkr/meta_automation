@@ -20,14 +20,14 @@ class HuggingFaceImageModelConfig(TypedDict):
 
 HUGGINGFACE_IMAGE_MODELS: list[HuggingFaceImageModelConfig] = [
     {
-        "model": "stabilityai/stable-diffusion-3.5-large-turbo",
-        "num_inference_steps": 11,
-        "guidance_scale": 7.5,
+        "model": "black-forest-labs/FLUX.1-dev",
+        "num_inference_steps": 28,
+        "guidance_scale": 3.5,
     },
     {
-        "model": "stabilityai/stable-diffusion-xl-base-1.0",
-        "num_inference_steps": 30,
-        "guidance_scale": 7.5,
+        "model": "black-forest-labs/FLUX.1-schnell",
+        "num_inference_steps": 4,
+        "guidance_scale": 0,
     },
     {
         "model": "black-forest-labs/FLUX.1-schnell",

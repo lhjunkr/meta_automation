@@ -201,45 +201,65 @@ def match_selected_articles(selected_result: str, news_list: list[dict]) -> list
 def build_instagram_caption_prompt(article: Article) -> str:
     return f"""**Role:** Professional Korean Social Media News Editor.
 
-You are an Instagram news editor who explains complex news in Korean within 10 seconds.
-Your priorities are factual accuracy, clarity, polite Korean tone, and mobile readability.
+You are an Instagram news editor who explains complex news in Korean for readers who may be seeing the issue for the first time.
+Your priorities are factual accuracy, clear context, polite Korean tone, and mobile readability.
 
 **Task:**
 Write an Instagram post caption in Korean based only on the selected article content provided below.
 
+The caption should be understandable even if the reader has not read any previous article about this issue.
+
 **Critical Constraints:**
 1. Write the final output in Korean.
-2. Use polite Korean speech style only. End sentences naturally with forms such as "~입니다", "~습니다", "~됩니다", "~입니다."
-3. Do not use casual speech, 반말, slang, exaggerated expressions, or overly familiar phrases such as "대박이죠?", "같이 지켜봐야겠어요", "정신 없었죠?"
-4. Do not invent numbers, dates, names, causes, or forecasts that are not in the article.
-5. Do not use prefixes such as [속보], 속보], 속보, or breaking news labels.
-6. Avoid exaggerated fear marketing, overexcited tone, and clickbait.
-7. Use short sentences and clear paragraph spacing for mobile readability.
-8. Use at most 3 bullet points.
-9. Keep the entire caption under 500 Korean characters.
-10. Do not use Markdown bold syntax such as **text**.
-11. Do not include broken symbols, checkbox-like characters, or decorative marks.
-12. If the article body is weak or incomplete, rely only on confirmed title/source facts and keep the caption conservative.
+2. Assume the reader is seeing this issue for the first time.
+3. Explain the background before explaining the event.
+4. Do not just repeat the headline. Explain what changed, who is affected, and why it matters.
+5. If you use a technical, financial, legal, diplomatic, or policy term, explain it in plain Korean immediately.
+6. Do not invent numbers, dates, names, causes, forecasts, or market effects that are not in the article.
+7. Do not use casual speech, slang, exaggerated expressions, fear marketing, or clickbait.
+8. Keep the tone calm, factual, and easy to understand.
+9. Use short paragraphs with clear line breaks for mobile readability.
+10. Keep the entire caption under 700 Korean characters.
+11. Do not use Markdown bold syntax such as **text**.
+12. Do not include broken symbols, checkbox-like characters, or decorative marks.
+13. Do not use prefixes such as [속보], 속보], 속보, or breaking news labels.
+14. Every sentence must add context or explanation. Avoid vague filler sentences.
 
 **Output Format:**
 ===KOREAN_CAPTION===
-🚨 [One-line Korean summary]
+🚨 [One-line Korean summary written in plain language]
+
+📌 배경
+[Explain the context needed to understand this issue in 1-2 short sentences.]
 
 📍 무슨 일이 있었나
-- [One confirmed key event from the article]
-- [Important number, organization, or concrete fact if available]
+[Explain the actual event or change in 1-2 short sentences.]
 
 🔎 왜 중요한가
-- [Why this matters to readers, markets, policy, companies, or daily life]
+[Explain who is affected and why this matters in 1-2 short sentences.]
 
 💡 한 줄 정리
-[One concise, non-exaggerated takeaway]
+[One clear takeaway that a first-time reader can understand.]
 
-#뉴스요약 #[기사카테고리] #이슈 #경제뉴스 #정보공유
+[5 topic-specific Korean hashtags]
 
-**Hashtag Rule:**
-Replace #[기사카테고리] with one actual Korean category hashtag.
-Examples: #경제, #국제, #정치, #기술, #사회
+**Hashtag Rules:**
+- Generate exactly 5 Korean hashtags.
+- The first hashtag must be #뉴스요약.
+- The other 4 hashtags must match the specific article topic.
+- Do not use vague hashtags such as #이슈, #정보공유, #소식.
+- Do not use unrelated broad hashtags just because they are popular.
+- Prefer concrete topic hashtags based on the article title, category, source, and body.
+- Use short Korean hashtags without spaces.
+- If the article is about markets, rates, housing, chips, AI, energy, trade, policy, diplomacy, safety, or companies, reflect that topic directly.
+- Do not invent names or topics that are not in the article.
+
+Examples:
+- Real estate article: #뉴스요약 #부동산 #전세 #아파트 #주택시장
+- Semiconductor article: #뉴스요약 #반도체 #AI반도체 #수출 #공급망
+- Exchange rate article: #뉴스요약 #환율 #달러 #금리 #금융시장
+- Diplomacy article: #뉴스요약 #외교 #안보 #국제정세 #정부정책
+- Energy article: #뉴스요약 #에너지 #유가 #전력 #산업정책
 
 **Selected Article Content:**
 - Title: {article.title}

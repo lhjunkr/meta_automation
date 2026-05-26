@@ -1,10 +1,11 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from constants import STATUS_FAILED, STATUS_SUCCESS
+from constants import STATUS_FAILED, STATUS_PUBLISHED, STATUS_SUCCESS
 from facebook_publishing import publish_article_to_facebook_page
 from instagram_publishing import publish_article_to_instagram
 from models import Article
+from publishing import publish_to_social_channels
 from threads_publishing import publish_article_to_threads
 
 
@@ -109,6 +110,50 @@ class PublishingModulesTest(unittest.TestCase):
         self.assertEqual(article.threads_publish_status, STATUS_FAILED)
         self.assertEqual(article.threads_post_id, "")
         self.assertIn("threads container failed", article.threads_publish_error)
+
+    @patch("publishing.publish_article_to_threads")
+    @patch("publishing.publish_article_to_facebook_page")
+    @patch("publishing.publish_article_to_instagram")
+    @patch("publishing.get_publish_delay_seconds", return_value=0)
+    @patch("publishing.is_already_published", return_value=False)
+    @patch("publishing.count_today_published", return_value=0)
+    @patch("publishing.preflight_threads_publishing")
+    @patch("publishing.preflight_meta_publishing")
+    def test_threads_preflight_failure_does_not_block_meta_channels(
+        self,
+        mock_meta_preflight,
+        mock_threads_preflight,
+        mock_count_today_published,
+        mock_is_already_published,
+        mock_get_delay,
+        mock_publish_instagram,
+        mock_publish_facebook,
+        mock_publish_threads,
+    ):
+        def mark_instagram_success(article: Article) -> Article:
+            article.instagram_publish_status = STATUS_SUCCESS
+            return article
+
+        def mark_facebook_success(article: Article) -> Article:
+            article.facebook_publish_status = STATUS_SUCCESS
+            return article
+
+        mock_threads_preflight.side_effect = RuntimeError("threads token expired")
+        mock_publish_instagram.side_effect = mark_instagram_success
+        mock_publish_facebook.side_effect = mark_facebook_success
+
+        article = build_publishable_article()
+        published_articles = publish_to_social_channels([article])
+
+        mock_meta_preflight.assert_called_once()
+        mock_threads_preflight.assert_called_once()
+        mock_publish_instagram.assert_called_once_with(article)
+        mock_publish_facebook.assert_called_once_with(article)
+        mock_publish_threads.assert_not_called()
+        self.assertEqual(published_articles, [article])
+        self.assertEqual(article.publish_status, STATUS_PUBLISHED)
+        self.assertEqual(article.threads_publish_status, STATUS_FAILED)
+        self.assertIn("threads token expired", article.threads_publish_error)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import os
 import unittest
 from tempfile import TemporaryDirectory
 
-from constants import STATUS_FAILED, STATUS_SUCCESS
+from constants import STATUS_FAILED, STATUS_PUBLISHED, STATUS_SUCCESS
 from models import Article
 from pipeline import handle_publish_results, is_article_complete
 
@@ -61,6 +61,27 @@ class PipelineTest(unittest.TestCase):
 
         self.assertEqual(history_record["status"], STATUS_FAILED)
         self.assertEqual(history_record["instagram_post_id"], article.instagram_post_id)
+
+    def test_handle_publish_results_records_meta_success_even_if_threads_failed(self):
+        article = self.build_complete_article()
+        article.instagram_publish_status = STATUS_SUCCESS
+        article.facebook_publish_status = STATUS_SUCCESS
+        article.threads_publish_status = STATUS_FAILED
+
+        original_cwd = os.getcwd()
+
+        with TemporaryDirectory() as temp_dir:
+            os.chdir(temp_dir)
+
+            try:
+                handle_publish_results([article])
+
+                with open("history.jsonl", encoding="utf-8") as history_file:
+                    history_record = json.loads(history_file.readline())
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertEqual(history_record["status"], STATUS_PUBLISHED)
 
 
 if __name__ == "__main__":

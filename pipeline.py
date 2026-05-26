@@ -96,11 +96,11 @@ def retry_failed_categories_with_backup(selected_articles: list[Article], run_di
     return final_articles
 
 
-def has_all_channel_publish_success(article: Article) -> bool:
+def has_required_channel_publish_success(article: Article) -> bool:
+    # Instagram/Facebook은 핵심 게시 채널이고, Threads는 장애가 나도 보조 채널 실패로만 기록합니다.
     return (
         article.instagram_publish_status == STATUS_SUCCESS
         and article.facebook_publish_status == STATUS_SUCCESS
-        and article.threads_publish_status == STATUS_SUCCESS
     )
 
 
@@ -114,13 +114,13 @@ def has_any_channel_publish_success(article: Article) -> bool:
 
 def handle_publish_results(selected_articles: list[Article]) -> None:
     published_articles = [
-        article for article in selected_articles if has_all_channel_publish_success(article)
+        article for article in selected_articles if has_required_channel_publish_success(article)
     ]
     partially_published_articles = [
         article
         for article in selected_articles
         if has_any_channel_publish_success(article)
-        and not has_all_channel_publish_success(article)
+        and not has_required_channel_publish_success(article)
     ]
 
     if published_articles:

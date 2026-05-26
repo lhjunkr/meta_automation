@@ -13,11 +13,56 @@ THREADS_CONTAINER_POLL_INTERVAL_SECONDS = 5
 THREADS_CONTAINER_MAX_WAIT_SECONDS = 120
 
 
-def create_threads_media_container(article: Article) -> str:
+def validate_threads_config() -> tuple[str, str]:
     load_dotenv()
 
     threads_access_token = os.getenv("THREADS_ACCESS_TOKEN")
     threads_user_id = os.getenv("THREADS_USER_ID")
+
+    if not threads_access_token or not threads_user_id:
+        raise RuntimeError(".env에 Threads 업로드 설정이 없습니다: THREADS_ACCESS_TOKEN, THREADS_USER_ID")
+
+    return threads_access_token, threads_user_id
+
+
+def fetch_threads_graph_object(object_id: str, access_token: str, fields: str) -> dict:
+    url = f"{THREADS_API_BASE_URL}/{object_id}"
+
+    response = requests.get(
+        url,
+        params={
+            "fields": fields,
+            "access_token": access_token,
+        },
+        timeout=30,
+    )
+
+    data = response.json()
+
+    if response.status_code >= 400:
+        raise RuntimeError(f"Threads API 검증 실패: {data}")
+
+    return data
+
+
+def preflight_threads_publishing() -> dict:
+    threads_access_token, threads_user_id = validate_threads_config()
+
+    threads_account = fetch_threads_graph_object(
+        threads_user_id,
+        threads_access_token,
+        "id,username",
+    )
+    print(f" -> Threads 계정 확인: {threads_account.get('username')}")
+
+    return {
+        "threads_user_id": threads_account.get("id", ""),
+        "threads_username": threads_account.get("username", ""),
+    }
+
+
+def create_threads_media_container(article: Article) -> str:
+    threads_access_token, threads_user_id = validate_threads_config()
 
     image_url = article.public_image_url
     caption = article.instagram_caption
@@ -44,9 +89,7 @@ def create_threads_media_container(article: Article) -> str:
 
 
 def fetch_threads_media_container_status(creation_id: str) -> dict:
-    load_dotenv()
-
-    threads_access_token = os.getenv("THREADS_ACCESS_TOKEN")
+    threads_access_token, _ = validate_threads_config()
 
     url = f"{THREADS_API_BASE_URL}/{creation_id}"
 
@@ -92,10 +135,7 @@ def wait_for_threads_media_container(creation_id: str) -> None:
 
 
 def publish_threads_media(creation_id: str) -> str:
-    load_dotenv()
-
-    threads_access_token = os.getenv("THREADS_ACCESS_TOKEN")
-    threads_user_id = os.getenv("THREADS_USER_ID")
+    threads_access_token, threads_user_id = validate_threads_config()
 
     url = f"{THREADS_API_BASE_URL}/{threads_user_id}/threads_publish"
 

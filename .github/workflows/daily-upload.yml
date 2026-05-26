@@ -95,6 +95,7 @@ jobs:
       - name: Build email report body
         if: always()
         run: |
+          run_report_path="$(find outputs -path '*/run_report.txt' -type f | sort | tail -n 1 || true)"
           failure_report_path="$(find outputs -path '*/failure_report.txt' -type f | sort | tail -n 1 || true)"
 
           {
@@ -102,6 +103,16 @@ jobs:
             echo "Status: ${{ job.status }}"
             echo "Branch: ${{ github.ref_name }}"
             echo "Run URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            echo "Run Report:"
+            echo ""
+
+            if [ -n "$run_report_path" ]; then
+              cat "$run_report_path"
+            else
+              echo "run_report.txt was not generated."
+            fi
+
             echo ""
             echo "Failure Report:"
             echo ""

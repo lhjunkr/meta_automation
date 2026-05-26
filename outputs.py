@@ -3,7 +3,11 @@ from datetime import datetime
 from pathlib import Path
 
 from models import Article
-from reporting import build_article_failure_summary, build_run_failure_report
+from reporting import (
+    build_article_failure_summary,
+    build_run_execution_report,
+    build_run_failure_report,
+)
 from time_utils import now_kst, today_kst
 
 
@@ -63,6 +67,12 @@ def save_failure_report(
     # 실패 이메일 본문에 바로 포함할 수 있도록 요약을 텍스트 산출물로 남깁니다.
     with open(run_dir / "failure_report.txt", "w", encoding="utf-8") as f:
         f.write(build_run_failure_report(selected_articles, failed_categories))
+
+
+def save_run_report(selected_articles: list[Article], run_dir) -> None:
+    # 이메일 본문에서 바로 읽을 수 있도록 업로드 결과와 모델 사용 정보를 별도 요약으로 남깁니다.
+    with open(run_dir / "run_report.txt", "w", encoding="utf-8") as f:
+        f.write(build_run_execution_report(selected_articles))
 
 
 def append_publish_failure_report(selected_articles: list[Article], run_dir) -> None:

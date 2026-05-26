@@ -13,6 +13,7 @@ from constants import (
 )
 from models import Article
 
+GEMINI_TEXT_MODEL = "gemini-2.5-flash-lite"
 HF_TEXT_MODEL = "Qwen/Qwen2.5-72B-Instruct"
 
 
@@ -128,7 +129,7 @@ Backup ID: [Article ID]
     client = genai.Client(api_key=api_key)
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
+        model=GEMINI_TEXT_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0.2),
     )
@@ -286,7 +287,7 @@ def generate_instagram_caption_with_gemini(article: Article) -> str:
     client = genai.Client(api_key=api_key)
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
+        model=GEMINI_TEXT_MODEL,
         contents=build_instagram_caption_prompt(article),
         config=types.GenerateContentConfig(temperature=0.7),
     )
@@ -332,25 +333,30 @@ def generate_instagram_caption(article: Article) -> Article:
         article.instagram_caption_raw = ""
         article.instagram_caption = ""
         article.instagram_caption_status = CAPTION_STATUS_SKIPPED_NO_BODY
+        article.instagram_caption_model = ""
         return article
 
     try:
         raw_text = generate_instagram_caption_with_gemini(article)
+        caption_model = GEMINI_TEXT_MODEL
     except Exception as gemini_error:
         print(f" -> Gemini 캡션 생성 실패, Qwen fallback 시도: {gemini_error}")
 
         try:
             raw_text = generate_instagram_caption_with_qwen(article)
+            caption_model = HF_TEXT_MODEL
         except Exception as qwen_error:
             article.instagram_caption_raw = ""
             article.instagram_caption = ""
             article.instagram_caption_status = STATUS_FAILED
+            article.instagram_caption_model = ""
             print(f" -> Qwen 캡션 생성 실패: {qwen_error}")
             return article
 
     article.instagram_caption_raw = raw_text
     article.instagram_caption = parse_instagram_caption(raw_text)
     article.instagram_caption_status = STATUS_SUCCESS
+    article.instagram_caption_model = caption_model
 
     return article
 

@@ -78,6 +78,7 @@ backup_article
 resolved_link
 body
 instagram_caption
+instagram_caption_model
 sdxl_image_prompt
 image_path
 final_image_path

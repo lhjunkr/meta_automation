@@ -22,6 +22,7 @@ class Article:
     instagram_caption_raw: str = ""
     instagram_caption: str = ""
     instagram_caption_status: str = ""
+    instagram_caption_model: str = ""
 
     sdxl_image_prompt_raw: str = ""
     sdxl_image_prompt: str = ""
@@ -90,6 +91,7 @@ class Article:
             instagram_caption_raw=article_data.get("instagram_caption_raw", ""),
             instagram_caption=article_data.get("instagram_caption", ""),
             instagram_caption_status=article_data.get("instagram_caption_status", ""),
+            instagram_caption_model=article_data.get("instagram_caption_model", ""),
             sdxl_image_prompt_raw=article_data.get("sdxl_image_prompt_raw", ""),
             sdxl_image_prompt=article_data.get("sdxl_image_prompt", ""),
             sdxl_image_prompt_status=article_data.get("sdxl_image_prompt_status", ""),
@@ -136,6 +138,7 @@ class Article:
                 "instagram_caption_raw": self.instagram_caption_raw,
                 "instagram_caption": self.instagram_caption,
                 "instagram_caption_status": self.instagram_caption_status,
+                "instagram_caption_model": self.instagram_caption_model,
                 "sdxl_image_prompt_raw": self.sdxl_image_prompt_raw,
                 "sdxl_image_prompt": self.sdxl_image_prompt,
                 "sdxl_image_prompt_status": self.sdxl_image_prompt_status,

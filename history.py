@@ -6,6 +6,12 @@ from constants import STATUS_PUBLISHED, STATUS_READY
 from models import Article
 from time_utils import now_kst, today_kst
 
+PUBLISH_POST_ID_FIELDS = (
+    "instagram_post_id",
+    "facebook_post_id",
+    "threads_post_id",
+)
+
 
 def append_publish_history(selected_articles: list[Article], status: str = STATUS_READY) -> None:
     # GitHub Actions runner의 기본 시간대와 무관하게 게시 이력은 운영 기준인 KST로 남깁니다.
@@ -30,6 +36,14 @@ def append_publish_history(selected_articles: list[Article], status: str = STATU
 
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
+
+def has_actual_publish_record(record: dict) -> bool:
+    if record.get("status") == STATUS_PUBLISHED:
+        return True
+
+    return any(bool(record.get(post_id_field)) for post_id_field in PUBLISH_POST_ID_FIELDS)
+
+
 def count_today_published() -> int:
     history_path = Path("history.jsonl")
 
@@ -52,7 +66,7 @@ def count_today_published() -> int:
             except json.JSONDecodeError:
                 continue
 
-            if record.get("status") != STATUS_PUBLISHED:
+            if not has_actual_publish_record(record):
                 continue
 
             published_at = record.get("published_at", "")

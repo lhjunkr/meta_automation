@@ -33,9 +33,9 @@ The production runtime is GitHub Actions. The workflow runs automatically every 
 8. Selected articles are normalized into the `Article` dataclass.
 9. The pipeline resolves source URLs, extracts article bodies, generates captions, generates image prompts, creates images, renders poster overlays, and uploads final images to R2.
 10. If a primary article does not pass the completion check, the backup article for the same category is processed.
-11. Before publishing, preflight checks verify Instagram, Facebook Page, and Threads access.
+11. Before publishing, preflight checks verify Instagram and Facebook Page access. Threads is checked separately so a Threads outage does not block Instagram/Facebook publishing.
 12. The automation publishes to Instagram, Facebook Page, and Threads, then writes local runtime history to `history.jsonl`.
-13. Runtime outputs and failure summaries are sent by email and uploaded as GitHub Actions artifacts.
+13. Runtime outputs, upload counts, model usage, and failure summaries are sent by email and uploaded as GitHub Actions artifacts.
 14. Runtime history is intentionally not committed to the public repository.
 
 ## Main Modules
@@ -48,7 +48,7 @@ The production runtime is GitHub Actions. The workflow runs automatically every 
 | `time_utils.py` | KST-based date and time helpers |
 | `config.py` | Environment-based runtime settings |
 | `news.py` | Google News collection, URL resolution, and body extraction |
-| `content.py` | Gemini article selection, caption generation, and image prompt generation |
+| `content.py` | Gemini article selection, caption generation with Qwen fallback, and image prompt generation |
 | `image_generation.py` | Hugging Face image generation with model fallback |
 | `image_rendering.py` | News poster overlay rendering |
 | `storage.py` | Cloudflare R2 upload |
@@ -58,7 +58,7 @@ The production runtime is GitHub Actions. The workflow runs automatically every 
 | `facebook_publishing.py` | Facebook Page photo publish requests |
 | `threads_publishing.py` | Threads media container polling and publish requests |
 | `outputs.py` | Runtime output files |
-| `reporting.py` | Failure summary generation |
+| `reporting.py` | Run summary and failure report generation |
 | `history.py` | Publish history and duplicate prevention |
 | `tests/` | Unit tests for core model, pipeline, and rendering behavior |
 
@@ -98,19 +98,32 @@ Image generation uses the Hugging Face Inference API. To prevent a single provid
 Current model priority:
 
 ```text
-1. stabilityai/stable-diffusion-3.5-large-turbo
-2. stabilityai/stable-diffusion-xl-base-1.0
-3. black-forest-labs/FLUX.1-schnell
+1. black-forest-labs/FLUX.1-dev, 28 steps, guidance 3.5
+2. black-forest-labs/FLUX.1-schnell, 4 steps, guidance 0
+3. black-forest-labs/FLUX.1-schnell, 4 steps, guidance 3.5
 ```
 
 If all models fail, the article receives the `generation_failed` status and the pipeline moves to the category backup article.
+
+## Text Generation Strategy
+
+Gemini selects article IDs and generates image prompts. Korean caption generation first uses Gemini, then falls back to Hugging Face Qwen if Gemini fails.
+
+Current caption model order:
+
+```text
+1. gemini-2.5-flash-lite
+2. Qwen/Qwen2.5-72B-Instruct
+```
+
+The model used for each caption is stored in `instagram_caption_model` and included in runtime outputs and email reports.
 
 ## Publish Eligibility
 
 An article must satisfy all of these conditions before it can be published:
 
 - Body extraction succeeded
-- Gemini caption generation succeeded
+- Caption generation succeeded
 - Image prompt generation succeeded
 - Hugging Face image generation succeeded
 - Poster rendering succeeded
@@ -124,13 +137,18 @@ If the primary article fails, the backup article is processed. If both primary a
 
 `publishing.py` runs a preflight check before sending publish requests.
 
-Preflight verifies:
+Required Meta preflight verifies:
 
 - `META_ACCESS_TOKEN` can access `IG_USER_ID`
 - `FACEBOOK_PAGE_ACCESS_TOKEN` can access `FACEBOOK_PAGE_ID`
+
+If required Meta preflight fails, the automation does not create Instagram or Facebook publish requests.
+
+Threads preflight verifies:
+
 - `THREADS_ACCESS_TOKEN` can access `THREADS_USER_ID`
 
-If preflight fails, the automation does not create Instagram, Facebook, or Threads publish requests.
+Threads is treated as an auxiliary channel. If Threads preflight fails, Instagram and Facebook publishing continue, while the Threads error is written to the article status and email report.
 
 For long-term operation, use a Meta Business System User token with the required Page and Instagram assets assigned. The current GitHub Secrets split the Instagram and Facebook credentials intentionally so each channel can be rotated or debugged independently.
 
@@ -153,12 +171,13 @@ selected_articles.txt
 instagram_captions.txt
 sdxl_image_prompts.txt
 generated_images.txt
+run_report.txt
 failed_categories.txt
 failure_report.txt
 images/
 ```
 
-`failure_report.txt` is also included in the email body. `outputs/**/*.txt` files are attached to the report email and uploaded as GitHub Actions artifacts.
+`run_report.txt` includes channel upload counts, uploaded article titles, caption model names, image model names, and channel post IDs. `failure_report.txt` contains category, article, and publishing failures. Both reports are included in the email body. `outputs/**/*.txt` files are attached to the report email and uploaded as GitHub Actions artifacts.
 
 Publish history is appended locally at runtime:
 
@@ -166,7 +185,7 @@ Publish history is appended locally at runtime:
 history.jsonl
 ```
 
-This file can contain article URLs, social post IDs, and public image URLs. It is ignored by Git and should not be committed to a public repository. During a single run, it is still used for duplicate prevention and daily post limit calculation. If persistent cross-run duplicate prevention is required, store this history in a private backend rather than the public Git repository.
+This file can contain article URLs, social post IDs, and public image URLs. It is ignored by Git and should not be committed to a public repository. During a single run, it is still used for duplicate prevention and daily post limit calculation. Partial publishing success is also counted if at least one channel post ID exists. If persistent cross-run duplicate prevention is required, store this history in a private backend rather than the public Git repository.
 
 ## Required GitHub Secrets
 
@@ -318,7 +337,7 @@ python3 -m unittest discover -s tests
 - With `DRY_RUN=false`, manual workflow dispatches publish real Instagram, Facebook, and Threads posts.
 - Publish timing is controlled by `UPLOAD_WINDOW_MINUTES` and `POST_SPACING_MINUTES`.
 - Some publishers may return `401`, `402`, or `403` during article body download.
-- If `trafilatura` cannot extract enough body text, the article fails and the pipeline moves to the backup article.
+- Body extraction tries `trafilatura`, then `readability-lxml`, then BeautifulSoup before failing short content.
 - If Meta returns `OAuthException`, `code 190`, or `Session has expired`, check the System User token, Threads token, asset assignments, and GitHub Secrets first.
 
 ## Common Commands
@@ -343,19 +362,18 @@ git commit -m "<message>"
 git push origin main
 ```
 
-If a GitHub Actions history commit causes a push conflict, pull the remote history first.
-
-```bash
-git pull --rebase origin main
-git push origin main
-```
-
 ## Security
 
 Never commit this file:
 
 ```text
 .env
+```
+
+Runtime history is also excluded from the public repository:
+
+```text
+history.jsonl
 ```
 
 This project uses official APIs:

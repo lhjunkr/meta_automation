@@ -24,11 +24,17 @@ from pipeline import (
     retry_failed_categories_with_backup,
 )
 from publishing import publish_to_social_channels
+from storage import (
+    cleanup_old_r2_publish_history,
+    download_recent_publish_history_from_r2,
+    upload_today_publish_history_to_r2,
+)
 
 # Main. 전체 콘텐츠 생성 파이프라인을 실행합니다.
 if __name__ == "__main__":
     # 실행 폴더를 만든 뒤 오늘 사용할 뉴스 후보를 수집합니다.
     run_dir = create_run_dir()
+    download_recent_publish_history_from_r2(keep_days=3)
     news_list = fetch_top_news()
 
     for news in news_list[:3]:
@@ -64,6 +70,8 @@ if __name__ == "__main__":
             save_run_report(selected_articles, run_dir)
             append_publish_failure_report(selected_articles, run_dir)
             handle_publish_results(selected_articles)
+            upload_today_publish_history_to_r2(run_dir.name)
+            cleanup_old_r2_publish_history(keep_days=3)
 
         print("\n[완료] 오늘 콘텐츠 생성 파이프라인이 끝났습니다.")
         print(f"산출물 저장 위치: {run_dir}")

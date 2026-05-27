@@ -36,7 +36,7 @@ The production runtime is GitHub Actions. The workflow runs automatically every 
 11. Before publishing, preflight checks verify Instagram and Facebook Page access. Threads is checked separately so a Threads outage does not block Instagram/Facebook publishing.
 12. The automation publishes to Instagram, Facebook Page, and Threads, then writes local runtime history to `history.jsonl`.
 13. Runtime outputs, upload counts, model usage, and failure summaries are sent by email and uploaded as GitHub Actions artifacts.
-14. Runtime history is intentionally not committed to the public repository.
+14. Runtime history is synced to a private Cloudflare R2 key and is intentionally not committed to the public repository.
 
 ## Main Modules
 
@@ -185,7 +185,15 @@ Publish history is appended locally at runtime:
 history.jsonl
 ```
 
-This file can contain article URLs, social post IDs, and public image URLs. It is ignored by Git and should not be committed to a public repository. During a single run, it is still used for duplicate prevention and daily post limit calculation. Partial publishing success is also counted if at least one channel post ID exists. If persistent cross-run duplicate prevention is required, store this history in a private backend rather than the public Git repository.
+This file can contain article URLs, social post IDs, and public image URLs. It is ignored by Git and should not be committed to a public repository. At the start of each run, recent history is downloaded from a private R2 key so duplicate prevention and daily post limit calculation can work across GitHub Actions runs. Partial publishing success is also counted if at least one channel post ID exists.
+
+Remote history is stored separately from public poster images:
+
+```text
+private/history/YYYY-MM-DD/history.jsonl
+```
+
+The automation keeps the same 3-day retention window used by local runtime outputs. Old R2 history objects are deleted after the retention window.
 
 ## Required GitHub Secrets
 

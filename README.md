@@ -34,9 +34,9 @@ The production runtime is GitHub Actions. The workflow runs automatically every 
 9. The pipeline resolves source URLs, extracts article bodies, generates captions, generates image prompts, creates images, renders poster overlays, and uploads final images to R2.
 10. If a primary article does not pass the completion check, the backup article for the same category is processed.
 11. Before publishing, preflight checks verify Instagram, Facebook Page, and Threads access.
-12. The automation publishes to Instagram, Facebook Page, and Threads, then writes publish history to `history.jsonl`.
+12. The automation publishes to Instagram, Facebook Page, and Threads, then writes local runtime history to `history.jsonl`.
 13. Runtime outputs and failure summaries are sent by email and uploaded as GitHub Actions artifacts.
-14. On successful workflow completion, GitHub Actions commits the updated `history.jsonl` file back to `main`.
+14. Runtime history is intentionally not committed to the public repository.
 
 ## Main Modules
 
@@ -160,13 +160,13 @@ images/
 
 `failure_report.txt` is also included in the email body. `outputs/**/*.txt` files are attached to the report email and uploaded as GitHub Actions artifacts.
 
-Publish history is appended to:
+Publish history is appended locally at runtime:
 
 ```text
 history.jsonl
 ```
 
-This file is used for duplicate prevention and daily post limit calculation, so the workflow commits it back to `main` after a successful run. If at least one social channel publishes successfully but another channel fails, the article is also written to history with `failed` status to prevent duplicate reposts on the successful channel.
+This file can contain article URLs, social post IDs, and public image URLs. It is ignored by Git and should not be committed to a public repository. During a single run, it is still used for duplicate prevention and daily post limit calculation. If persistent cross-run duplicate prevention is required, store this history in a private backend rather than the public Git repository.
 
 ## Required GitHub Secrets
 

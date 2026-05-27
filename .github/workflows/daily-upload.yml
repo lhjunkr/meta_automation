@@ -78,20 +78,6 @@ jobs:
           name: meta-automation-outputs
           path: outputs/
 
-      - name: Commit history update
-        if: success()
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-
-          if [ -f history.jsonl ]; then
-            git add -f history.jsonl
-            git commit -m "Update publish history" || echo "No history changes"
-            git push
-          else
-            echo "No history.jsonl file to commit"
-          fi
-
       - name: Build email report body
         if: always()
         run: |

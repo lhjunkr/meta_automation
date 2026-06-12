@@ -16,6 +16,8 @@ from models import Article
 GEMINI_TEXT_MODEL = "gemini-2.5-flash-lite"
 HF_TEXT_MODEL = "Qwen/Qwen2.5-72B-Instruct"
 MAX_IMAGE_PROMPT_BODY_CHARS = 3000
+IMAGE_PROMPT_RESPONSE_MARKER = "===IMAGE_PROMPT==="
+MIN_IMAGE_PROMPT_LENGTH = 40
 
 
 def build_news_context(news_list):
@@ -412,18 +414,38 @@ Rules:
 - Always include: no text, no watermark, no logo, no AI art look, no glossy advertisement, no cinematic lighting, no surrealism, no oversaturation, no artificial glow, no distorted anatomy.
 
 [Output Format]
-===IMAGE_PROMPT===
+{IMAGE_PROMPT_RESPONSE_MARKER}
 (Comma-separated English keywords only)
 """
 
-# Step 8-1a. Gemini 응답에서 실제 이미지 프롬프트만 분리합니다.
-def parse_sdxl_image_prompt(raw_text):
-    marker = "===IMAGE_PROMPT==="
 
-    if marker in raw_text:
-        return raw_text.split(marker, 1)[1].strip()
+# Step 8-1a. Gemini 응답에서 실제 이미지 프롬프트만 분리합니다.
+def parse_sdxl_image_prompt(raw_text: str) -> str:
+    if IMAGE_PROMPT_RESPONSE_MARKER in raw_text:
+        return raw_text.split(IMAGE_PROMPT_RESPONSE_MARKER, 1)[1].strip()
 
     return raw_text.strip()
+
+
+def validate_sdxl_image_prompt_response(raw_text: str) -> str:
+    if not raw_text:
+        raise ValueError("Gemini 이미지 프롬프트 응답이 비어 있습니다.")
+
+    if IMAGE_PROMPT_RESPONSE_MARKER not in raw_text:
+        raise ValueError("Gemini 이미지 프롬프트 응답에 필수 마커가 없습니다.")
+
+    image_prompt = parse_sdxl_image_prompt(raw_text)
+
+    if len(image_prompt) < MIN_IMAGE_PROMPT_LENGTH:
+        raise ValueError(
+            "Gemini 이미지 프롬프트가 지나치게 짧습니다: "
+            f"{len(image_prompt)}자"
+        )
+
+    if "," not in image_prompt:
+        raise ValueError("Gemini 이미지 프롬프트가 쉼표 구분 형식이 아닙니다.")
+
+    return image_prompt
 
 
 # Step 8-2. 기사 1개에 대해 SDXL 이미지 프롬프트를 생성합니다.
@@ -452,7 +474,15 @@ def generate_sdxl_image_prompt(article: Article) -> Article:
     raw_text = (response.text or "").strip()
 
     article.sdxl_image_prompt_raw = raw_text
-    article.sdxl_image_prompt = parse_sdxl_image_prompt(raw_text)
+
+    try:
+        article.sdxl_image_prompt = validate_sdxl_image_prompt_response(raw_text)
+    except ValueError as validation_error:
+        article.sdxl_image_prompt = ""
+        article.sdxl_image_prompt_status = STATUS_FAILED
+        print(f" -> 이미지 프롬프트 응답 검증 실패: {validation_error}")
+        return article
+
     article.sdxl_image_prompt_status = STATUS_SUCCESS
 
     return article

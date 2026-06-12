@@ -1,6 +1,14 @@
 import unittest
+from unittest.mock import Mock, patch
 
-from content import MAX_IMAGE_PROMPT_BODY_CHARS, build_sdxl_image_prompt
+from constants import STATUS_FAILED
+from content import (
+    IMAGE_PROMPT_RESPONSE_MARKER,
+    MAX_IMAGE_PROMPT_BODY_CHARS,
+    build_sdxl_image_prompt,
+    generate_sdxl_image_prompt,
+    validate_sdxl_image_prompt_response,
+)
 from models import Article
 
 
@@ -45,6 +53,69 @@ class ContentTest(unittest.TestCase):
         )
         self.assertIn("Do not combine several unrelated scenes", prompt)
         self.assertIn("Do not substitute a generic office", prompt)
+
+    def test_image_prompt_response_validation_accepts_required_format(self):
+        raw_text = (
+            f"{IMAGE_PROMPT_RESPONSE_MARKER}\n"
+            "semiconductor fabrication facility, engineers inspecting silicon wafers, "
+            "United States industrial setting"
+        )
+
+        image_prompt = validate_sdxl_image_prompt_response(raw_text)
+
+        self.assertTrue(image_prompt.startswith("semiconductor fabrication facility"))
+
+    def test_image_prompt_response_validation_rejects_empty_response(self):
+        with self.assertRaisesRegex(ValueError, "비어 있습니다"):
+            validate_sdxl_image_prompt_response("")
+
+    def test_image_prompt_response_validation_rejects_short_response(self):
+        raw_text = f"{IMAGE_PROMPT_RESPONSE_MARKER}\nchip, factory"
+
+        with self.assertRaisesRegex(ValueError, "지나치게 짧습니다"):
+            validate_sdxl_image_prompt_response(raw_text)
+
+    def test_image_prompt_response_validation_rejects_missing_marker(self):
+        raw_text = (
+            "semiconductor facility, engineers inspecting wafers, "
+            "realistic editorial photography"
+        )
+
+        with self.assertRaisesRegex(ValueError, "필수 마커가 없습니다"):
+            validate_sdxl_image_prompt_response(raw_text)
+
+    def test_image_prompt_response_validation_rejects_non_comma_format(self):
+        raw_text = (
+            f"{IMAGE_PROMPT_RESPONSE_MARKER}\n"
+            "semiconductor engineers inspecting silicon wafers in a production facility"
+        )
+
+        with self.assertRaisesRegex(ValueError, "쉼표 구분 형식이 아닙니다"):
+            validate_sdxl_image_prompt_response(raw_text)
+
+    def test_invalid_response_does_not_trigger_additional_gemini_call(self):
+        article = Article(
+            id=3,
+            category="경제(KR)",
+            title="반도체 투자",
+            source="테스트 언론사",
+            google_link="https://example.com/investment",
+        )
+        article.instagram_caption = "반도체 생산시설 투자가 확대됐습니다."
+        article.body = "기업이 국내 생산시설에 투자합니다."
+
+        mock_client = Mock()
+        mock_client.models.generate_content.return_value = Mock(text="")
+
+        with (
+            patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}),
+            patch("content.genai.Client", return_value=mock_client),
+        ):
+            generate_sdxl_image_prompt(article)
+
+        mock_client.models.generate_content.assert_called_once()
+        self.assertEqual(article.sdxl_image_prompt, "")
+        self.assertEqual(article.sdxl_image_prompt_status, STATUS_FAILED)
 
 
 if __name__ == "__main__":

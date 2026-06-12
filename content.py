@@ -387,14 +387,23 @@ You are a Visual Director specializing in photojournalism. You transform text-ba
 [Task: SDXL Image Prompt (ENGLISH ONLY, KEYWORD FORMAT)]
 Create a realistic editorial news photo prompt from the article information above. Output only comma-separated English keywords.
 
+Scene Grounding:
+- Before writing the prompt, silently identify one primary subject, one visible action or event, and the most specific supported location or setting.
+- Base these three elements directly on the article title, caption, or body excerpt. Do not invent a city, institution, person, object, or event that the article does not support.
+- Start the final keyword list with the primary subject, visible action or event, and location or setting, in that order.
+- Depict one coherent real-world scene where the subject is visibly connected to the action. Do not combine several unrelated scenes or symbolic concepts.
+- If the article describes an abstract topic such as policy, investment, inflation, or diplomacy, represent the concrete people, objects, facilities, documents, products, or public setting explicitly mentioned in the article.
+- If no specific location is supported, use a factual setting implied by the subject instead of guessing a city or landmark.
+
 Rules:
-- First infer the article's geographic and cultural context from the caption: country, city, region, institutions, language, people, policy topic, company, market, or event location.
+- Infer the article's geographic and cultural context from all provided article information: country, city, region, institutions, language, people, policy topic, company, market, or event location.
 - Match the visual scene to that context naturally.
 - For Korean news, use Korean people when people are needed, Korean urban or institutional settings, Seoul or Korean city atmosphere, Korean offices, Korean streets, Korean public buildings, Korean newsrooms, Korean documents or screens without readable text.
 - For non-Korean news, match the relevant country or region: local-looking people, architecture, streets, offices, public buildings, vehicles, clothing, and environmental details appropriate to the article location.
-- For global or multinational news, use neutral international newsroom, global business district, conference room, airport, financial market, or diverse non-identifiable people unless a specific country is clearly implied.
+- For global or multinational news, preserve the article's concrete subject and action. Use a neutral international setting only when the article does not support a more specific location.
 - Do not force people into the image if the article is better represented by documents, screens, buildings, products, markets, vehicles, or city scenes.
-- Prefer credible real-world scenes: offices, documents, screens, streets, public buildings, markets, vehicles, conference rooms, newsrooms, city scenes.
+- Do not substitute a generic office, meeting room, newsroom, stock chart, laptop, or city skyline for the article's actual subject unless that element is directly relevant.
+- Prefer credible real-world scenes grounded in the article's concrete details.
 - Style: photojournalism, documentary editorial photography, candid real-world scene, 35mm lens, natural light, realistic colors, subtle film grain, authentic news photo texture.
 - Layout: vertical portrait, main subject in upper half, dark negative space at bottom, soft black gradient at bottom edge, vignette.
 - Avoid: glossy advertisement style, cinematic lighting, surrealism, futuristic visuals, exaggerated drama, over-saturation, artificial glow, obvious AI-generated poster look.

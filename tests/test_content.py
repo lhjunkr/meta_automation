@@ -24,6 +24,28 @@ class ContentTest(unittest.TestCase):
         self.assertIn("가" * MAX_IMAGE_PROMPT_BODY_CHARS, prompt)
         self.assertNotIn("제외될본문", prompt)
 
+    def test_image_prompt_prioritizes_grounded_subject_action_and_location(self):
+        article = Article(
+            id=2,
+            category="경제(US)",
+            title="반도체 공장 투자 발표",
+            source="테스트 언론사",
+            google_link="https://example.com/semiconductor",
+        )
+        article.instagram_caption = "반도체 기업이 새 생산시설 투자를 발표했습니다."
+        article.body = "기업은 미국 내 반도체 생산시설을 확장할 계획입니다."
+
+        prompt = build_sdxl_image_prompt(article)
+
+        self.assertIn("one primary subject, one visible action or event", prompt)
+        self.assertIn("most specific supported location or setting", prompt)
+        self.assertIn(
+            "primary subject, visible action or event, and location or setting, in that order",
+            prompt,
+        )
+        self.assertIn("Do not combine several unrelated scenes", prompt)
+        self.assertIn("Do not substitute a generic office", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

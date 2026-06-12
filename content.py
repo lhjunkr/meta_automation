@@ -2,7 +2,7 @@ import os
 
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 from huggingface_hub import InferenceClient
 
 from constants import (
@@ -18,6 +18,7 @@ HF_TEXT_MODEL = "Qwen/Qwen2.5-72B-Instruct"
 MAX_IMAGE_PROMPT_BODY_CHARS = 3000
 IMAGE_PROMPT_RESPONSE_MARKER = "===IMAGE_PROMPT==="
 MIN_IMAGE_PROMPT_LENGTH = 40
+RETRY_EXHAUSTED_STATUS_CODES = {429, 503}
 
 
 def build_news_context(news_list):
@@ -465,11 +466,26 @@ def generate_sdxl_image_prompt(article: Article) -> Article:
 
     client = genai.Client(api_key=api_key)
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
-        contents=build_sdxl_image_prompt(article),
-        config=types.GenerateContentConfig(temperature=0.7),
-    )
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=build_sdxl_image_prompt(article),
+            config=types.GenerateContentConfig(temperature=0.7),
+        )
+    except errors.APIError as api_error:
+        if api_error.code not in RETRY_EXHAUSTED_STATUS_CODES:
+            raise
+
+        # SDK가 자체 재시도를 모두 소진한 429/503만 기사 실패로 격리합니다.
+        # 여기서 다시 호출하지 않아 API 부하와 중복 재시도를 늘리지 않습니다.
+        article.sdxl_image_prompt_raw = ""
+        article.sdxl_image_prompt = ""
+        article.sdxl_image_prompt_status = STATUS_FAILED
+        print(
+            " -> Gemini 이미지 프롬프트 생성 실패 "
+            f"({api_error.code}), 다음 기사로 진행합니다: {api_error}"
+        )
+        return article
 
     raw_text = (response.text or "").strip()
 

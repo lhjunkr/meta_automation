@@ -15,6 +15,7 @@ from models import Article
 
 GEMINI_TEXT_MODEL = "gemini-2.5-flash-lite"
 HF_TEXT_MODEL = "Qwen/Qwen2.5-72B-Instruct"
+MAX_IMAGE_PROMPT_BODY_CHARS = 3000
 
 
 def build_news_context(news_list):
@@ -370,18 +371,21 @@ def generate_instagram_captions(selected_articles: list[Article]) -> list[Articl
     return selected_articles
 
 
-# Step 8-1. 인스타 캡션을 기반으로 SDXL 이미지 생성 프롬프트를 만듭니다.
+# Step 8-1. 기사 정보와 인스타 캡션을 기반으로 SDXL 이미지 생성 프롬프트를 만듭니다.
 def build_sdxl_image_prompt(article: Article) -> str:
-    step1_output = article.instagram_caption
+    article_body_excerpt = article.body[:MAX_IMAGE_PROMPT_BODY_CHARS]
 
     return f"""[Persona]
 You are a Visual Director specializing in photojournalism. You transform text-based news summaries into highly optimized keyword-based prompts for Stable Diffusion XL (SDXL).
 
 [Input Data]
-- Generated Caption: {step1_output}
+- Article Title: {article.title}
+- Category: {article.category}
+- Generated Caption: {article.instagram_caption}
+- Article Body Excerpt (maximum {MAX_IMAGE_PROMPT_BODY_CHARS} characters): {article_body_excerpt}
 
 [Task: SDXL Image Prompt (ENGLISH ONLY, KEYWORD FORMAT)]
-Create a realistic editorial news photo prompt from the caption. Output only comma-separated English keywords.
+Create a realistic editorial news photo prompt from the article information above. Output only comma-separated English keywords.
 
 Rules:
 - First infer the article's geographic and cultural context from the caption: country, city, region, institutions, language, people, policy topic, company, market, or event location.

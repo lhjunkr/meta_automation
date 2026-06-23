@@ -59,12 +59,47 @@ def text_width(draw, text, font):
     return bbox[2] - bbox[0]
 
 
+def split_long_word(draw, word, font, max_width):
+    chunks = []
+    current = ""
+
+    for character in word:
+        candidate = current + character
+
+        if not current or text_width(draw, candidate, font) <= max_width:
+            current = candidate
+            continue
+
+        chunks.append(current)
+        current = character
+
+    if current:
+        chunks.append(current)
+
+    return chunks
+
+
 def wrap_text(draw, text, font, max_width, max_lines=2):
     words = text.split()
     lines = []
     current = ""
 
     for word in words:
+        if text_width(draw, word, font) > max_width:
+            if current:
+                lines.append(current)
+                current = ""
+
+            for word_chunk in split_long_word(draw, word, font, max_width):
+                if len(lines) >= max_lines:
+                    break
+                lines.append(word_chunk)
+
+            if len(lines) >= max_lines:
+                break
+
+            continue
+
         candidate = word if not current else f"{current} {word}"
         if text_width(draw, candidate, font) <= max_width:
             current = candidate

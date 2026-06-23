@@ -10,6 +10,13 @@ from models import Article
 GRAPH_API_VERSION = "v19.0"
 INSTAGRAM_CONTAINER_POLL_INTERVAL_SECONDS = 5
 INSTAGRAM_CONTAINER_MAX_WAIT_SECONDS = 120
+INSTAGRAM_PUBLISH_RETRY_ATTEMPTS = 3
+INSTAGRAM_PUBLISH_RETRY_DELAY_SECONDS = 10
+INSTAGRAM_RETRYABLE_PUBLISH_ERROR_KEYWORDS = (
+    "Media ID is not available",
+    "media is not available",
+    "temporarily unavailable",
+)
 
 
 def create_instagram_media_container(article: Article) -> str:
@@ -113,11 +120,46 @@ def publish_instagram_media(creation_id: str) -> str:
     return data["id"]
 
 
+def is_retryable_instagram_publish_error(error: Exception) -> bool:
+    error_message = str(error)
+    return any(
+        retryable_keyword.lower() in error_message.lower()
+        for retryable_keyword in INSTAGRAM_RETRYABLE_PUBLISH_ERROR_KEYWORDS
+    )
+
+
+def publish_instagram_media_with_retry(creation_id: str) -> str:
+    last_error: Exception | None = None
+
+    for attempt_number in range(1, INSTAGRAM_PUBLISH_RETRY_ATTEMPTS + 1):
+        try:
+            return publish_instagram_media(creation_id)
+        except RuntimeError as error:
+            last_error = error
+
+            if (
+                attempt_number >= INSTAGRAM_PUBLISH_RETRY_ATTEMPTS
+                or not is_retryable_instagram_publish_error(error)
+            ):
+                raise
+
+            print(
+                " -> Instagram 게시 일시 오류, 재시도합니다: "
+                f"{attempt_number}/{INSTAGRAM_PUBLISH_RETRY_ATTEMPTS} ({error})"
+            )
+            time.sleep(INSTAGRAM_PUBLISH_RETRY_DELAY_SECONDS)
+
+    if last_error:
+        raise last_error
+
+    raise RuntimeError("Instagram 게시 재시도 중 알 수 없는 오류가 발생했습니다.")
+
+
 def publish_article_to_instagram(article: Article) -> Article:
     try:
         creation_id = create_instagram_media_container(article)
         wait_for_instagram_media_container(creation_id)
-        instagram_post_id = publish_instagram_media(creation_id)
+        instagram_post_id = publish_instagram_media_with_retry(creation_id)
 
         article.instagram_publish_status = STATUS_SUCCESS
         article.instagram_post_id = instagram_post_id

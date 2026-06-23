@@ -10,10 +10,26 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write
+      contents: read
 
     env:
       DRY_RUN: "false"
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
+      META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+      IG_USER_ID: ${{ secrets.IG_USER_ID }}
+      FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+      FACEBOOK_PAGE_ACCESS_TOKEN: ${{ secrets.FACEBOOK_PAGE_ACCESS_TOKEN }}
+      THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+      THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+      MAX_DAILY_POSTS: "3"
+      UPLOAD_WINDOW_MINUTES: "15"
+      POST_SPACING_MINUTES: "5"
 
     steps:
       - name: Checkout repository
@@ -48,25 +64,6 @@ jobs:
       - name: Run unit tests
         run: |
           python -m unittest discover -s tests
-
-      - name: Create .env file
-        run: |
-          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
-          echo "HF_TOKEN=${{ secrets.HF_TOKEN }}" >> .env
-          echo "R2_ACCOUNT_ID=${{ secrets.R2_ACCOUNT_ID }}" >> .env
-          echo "R2_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}" >> .env
-          echo "R2_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}" >> .env
-          echo "R2_BUCKET_NAME=${{ secrets.R2_BUCKET_NAME }}" >> .env
-          echo "R2_PUBLIC_BASE_URL=${{ secrets.R2_PUBLIC_BASE_URL }}" >> .env
-          echo "META_ACCESS_TOKEN=${{ secrets.META_ACCESS_TOKEN }}" >> .env
-          echo "IG_USER_ID=${{ secrets.IG_USER_ID }}" >> .env
-          echo "FACEBOOK_PAGE_ID=${{ secrets.FACEBOOK_PAGE_ID }}" >> .env
-          echo "FACEBOOK_PAGE_ACCESS_TOKEN=${{ secrets.FACEBOOK_PAGE_ACCESS_TOKEN }}" >> .env
-          echo "THREADS_ACCESS_TOKEN=${{ secrets.THREADS_ACCESS_TOKEN }}" >> .env
-          echo "THREADS_USER_ID=${{ secrets.THREADS_USER_ID }}" >> .env
-          echo "MAX_DAILY_POSTS=3" >> .env
-          echo "UPLOAD_WINDOW_MINUTES=15" >> .env
-          echo "POST_SPACING_MINUTES=5" >> .env
 
       - name: Run automation
         run: python main.py

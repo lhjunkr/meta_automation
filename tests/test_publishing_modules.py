@@ -3,7 +3,11 @@ from unittest.mock import Mock, patch
 
 from constants import STATUS_FAILED, STATUS_PUBLISHED, STATUS_SUCCESS
 from facebook_publishing import publish_article_to_facebook_page
-from instagram_publishing import publish_article_to_instagram
+from instagram_publishing import (
+    is_retryable_instagram_publish_error,
+    publish_article_to_instagram,
+    publish_instagram_media_with_retry,
+)
 from models import Article
 from publishing import publish_to_social_channels
 from threads_publishing import publish_article_to_threads
@@ -79,6 +83,36 @@ class PublishingModulesTest(unittest.TestCase):
         self.assertEqual(article.instagram_publish_status, STATUS_FAILED)
         self.assertEqual(article.instagram_post_id, "")
         self.assertIn("container failed", article.instagram_publish_error)
+
+    def test_instagram_publish_retryable_error_detection(self):
+        self.assertTrue(
+            is_retryable_instagram_publish_error(
+                RuntimeError("Instagram 게시 실패: Media ID is not available")
+            )
+        )
+        self.assertFalse(
+            is_retryable_instagram_publish_error(
+                RuntimeError("Instagram 게시 실패: invalid token")
+            )
+        )
+
+    @patch("instagram_publishing.time.sleep")
+    @patch("instagram_publishing.publish_instagram_media")
+    def test_instagram_publish_media_retries_temporary_media_error(
+        self,
+        mock_publish_media,
+        mock_sleep,
+    ):
+        mock_publish_media.side_effect = [
+            RuntimeError("Instagram 게시 실패: Media ID is not available"),
+            "instagram-post-1",
+        ]
+
+        instagram_post_id = publish_instagram_media_with_retry("instagram-container-1")
+
+        self.assertEqual(instagram_post_id, "instagram-post-1")
+        self.assertEqual(mock_publish_media.call_count, 2)
+        mock_sleep.assert_called_once()
 
     @patch("threads_publishing.publish_threads_media")
     @patch("threads_publishing.wait_for_threads_media_container")

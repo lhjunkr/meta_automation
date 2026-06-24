@@ -112,6 +112,36 @@ def has_any_channel_publish_success(article: Article) -> bool:
     )
 
 
+def count_required_channel_publish_successes(selected_articles: list[Article]) -> dict[str, int]:
+    return {
+        "Instagram": sum(
+            1
+            for article in selected_articles
+            if article.instagram_publish_status == STATUS_SUCCESS
+        ),
+        "Facebook": sum(
+            1
+            for article in selected_articles
+            if article.facebook_publish_status == STATUS_SUCCESS
+        ),
+    }
+
+
+def ensure_required_social_channels_published(selected_articles: list[Article]) -> None:
+    required_channel_counts = count_required_channel_publish_successes(selected_articles)
+    failed_channels = [
+        f"{channel_name}=0"
+        for channel_name, publish_count in required_channel_counts.items()
+        if publish_count == 0
+    ]
+
+    if failed_channels:
+        raise RuntimeError(
+            "Required social channel publishing failed: "
+            + ", ".join(failed_channels)
+        )
+
+
 def handle_publish_results(selected_articles: list[Article]) -> None:
     published_articles = [
         article for article in selected_articles if has_required_channel_publish_success(article)

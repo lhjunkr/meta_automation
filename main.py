@@ -19,6 +19,7 @@ from outputs import (
     save_selected_news,
 )
 from pipeline import (
+    ensure_required_social_channels_published,
     handle_publish_results,
     process_content_pipeline,
     retry_failed_categories_with_backup,
@@ -72,6 +73,7 @@ if __name__ == "__main__":
             handle_publish_results(selected_articles)
             upload_today_publish_history_to_r2(run_dir.name)
             cleanup_old_r2_publish_history(keep_days=3)
+            ensure_required_social_channels_published(selected_articles)
 
         print("\n[완료] 오늘 콘텐츠 생성 파이프라인이 끝났습니다.")
         print(f"산출물 저장 위치: {run_dir}")

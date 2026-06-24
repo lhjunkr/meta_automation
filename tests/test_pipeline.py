@@ -8,6 +8,7 @@ from unittest.mock import patch
 from constants import STATUS_FAILED, STATUS_PUBLISHED, STATUS_SUCCESS
 from models import Article
 from pipeline import (
+    ensure_required_social_channels_published,
     handle_publish_results,
     is_article_complete,
     retry_failed_categories_with_backup,
@@ -129,6 +130,29 @@ class PipelineTest(unittest.TestCase):
                 os.chdir(original_cwd)
 
         self.assertEqual(history_record["status"], STATUS_PUBLISHED)
+
+    def test_ensure_required_social_channels_published_allows_required_successes(self):
+        article = self.build_complete_article()
+        article.instagram_publish_status = STATUS_SUCCESS
+        article.facebook_publish_status = STATUS_SUCCESS
+
+        ensure_required_social_channels_published([article])
+
+    def test_ensure_required_social_channels_published_fails_when_instagram_has_no_success(self):
+        article = self.build_complete_article()
+        article.instagram_publish_status = STATUS_FAILED
+        article.facebook_publish_status = STATUS_SUCCESS
+
+        with self.assertRaisesRegex(RuntimeError, "Instagram=0"):
+            ensure_required_social_channels_published([article])
+
+    def test_ensure_required_social_channels_published_fails_when_facebook_has_no_success(self):
+        article = self.build_complete_article()
+        article.instagram_publish_status = STATUS_SUCCESS
+        article.facebook_publish_status = STATUS_FAILED
+
+        with self.assertRaisesRegex(RuntimeError, "Facebook=0"):
+            ensure_required_social_channels_published([article])
 
 
 if __name__ == "__main__":

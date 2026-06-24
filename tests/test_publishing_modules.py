@@ -9,8 +9,17 @@ from instagram_publishing import (
     publish_instagram_media_with_retry,
 )
 from models import Article
-from publishing import publish_to_social_channels
-from threads_publishing import publish_article_to_threads
+from publishing import (
+    get_first_publish_delay_seconds,
+    get_publish_delay_seconds,
+    publish_to_social_channels,
+)
+from threads_publishing import (
+    THREADS_TEXT_MAX_LENGTH,
+    build_threads_post_text,
+    create_threads_media_container,
+    publish_article_to_threads,
+)
 
 
 def build_publishable_article() -> Article:
@@ -144,6 +153,54 @@ class PublishingModulesTest(unittest.TestCase):
         self.assertEqual(article.threads_publish_status, STATUS_FAILED)
         self.assertEqual(article.threads_post_id, "")
         self.assertIn("threads container failed", article.threads_publish_error)
+
+    def test_threads_post_text_is_truncated_to_api_limit(self):
+        caption = "가" * (THREADS_TEXT_MAX_LENGTH + 20)
+
+        threads_text = build_threads_post_text(caption)
+
+        self.assertLessEqual(len(threads_text), THREADS_TEXT_MAX_LENGTH)
+        self.assertTrue(threads_text.endswith("..."))
+
+    @patch("threads_publishing.requests.post")
+    @patch("threads_publishing.validate_threads_config")
+    def test_threads_media_container_uses_limited_text(
+        self,
+        mock_validate_threads_config,
+        mock_post,
+    ):
+        mock_validate_threads_config.return_value = ("threads-token", "threads-user")
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {"id": "threads-container-1"}
+        mock_post.return_value = mock_response
+
+        article = build_publishable_article()
+        article.instagram_caption = "가" * (THREADS_TEXT_MAX_LENGTH + 20)
+
+        create_threads_media_container(article)
+
+        payload = mock_post.call_args.kwargs["data"]
+        self.assertLessEqual(len(payload["text"]), THREADS_TEXT_MAX_LENGTH)
+
+    @patch("publishing.random.randint", return_value=120)
+    @patch.dict(
+        "os.environ",
+        {
+            "UPLOAD_WINDOW_MINUTES": "15",
+            "POST_SPACING_MINUTES": "5",
+        },
+    )
+    def test_publish_delays_stay_inside_upload_window(self, mock_randint):
+        first_delay_seconds = get_first_publish_delay_seconds(publish_count=3)
+        delay_seconds = [
+            get_publish_delay_seconds(0, first_delay_seconds),
+            get_publish_delay_seconds(1, first_delay_seconds),
+            get_publish_delay_seconds(2, first_delay_seconds),
+        ]
+
+        self.assertEqual(delay_seconds, [120, 300, 300])
+        self.assertLessEqual(sum(delay_seconds), 15 * 60)
+        mock_randint.assert_called_once_with(0, 5 * 60)
 
     @patch("publishing.publish_article_to_threads")
     @patch("publishing.publish_article_to_facebook_page")

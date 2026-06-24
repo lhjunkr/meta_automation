@@ -101,13 +101,12 @@ def preflight_meta_publishing() -> dict:
     }
 
 
-def get_publish_delay_seconds(publish_index: int) -> int:
+def get_first_publish_delay_seconds(publish_count: int) -> int:
     upload_window_minutes = get_int_env("UPLOAD_WINDOW_MINUTES", 120)
     post_spacing_minutes = get_int_env("POST_SPACING_MINUTES", 10)
-    max_daily_posts = get_int_env("MAX_DAILY_POSTS", 3)
 
     latest_first_post_minute = upload_window_minutes - (
-        (max_daily_posts - 1) * post_spacing_minutes
+        (max(publish_count, 1) - 1) * post_spacing_minutes
     )
     latest_first_post_minute = max(latest_first_post_minute, 0)
 
@@ -117,9 +116,18 @@ def get_publish_delay_seconds(publish_index: int) -> int:
         latest_first_post_minute * 60,
     )
 
-    return first_post_delay_seconds + (
-        publish_index * post_spacing_minutes * 60
-    )
+    return first_post_delay_seconds
+
+
+def get_publish_delay_seconds(
+    publish_attempt_index: int,
+    first_publish_delay_seconds: int,
+) -> int:
+    if publish_attempt_index == 0:
+        return first_publish_delay_seconds
+
+    post_spacing_minutes = get_int_env("POST_SPACING_MINUTES", 10)
+    return max(post_spacing_minutes, 0) * 60
 
 
 def publish_to_social_channels(selected_articles: list[Article]) -> list[Article]:
@@ -144,6 +152,7 @@ def publish_to_social_channels(selected_articles: list[Article]) -> list[Article
         return published_articles
 
     publish_attempt_index = 0
+    first_publish_delay_seconds = get_first_publish_delay_seconds(remaining_slots)
 
     for article in selected_articles:
         if len(published_articles) >= remaining_slots:
@@ -159,7 +168,10 @@ def publish_to_social_channels(selected_articles: list[Article]) -> list[Article
             print(" -> 이미 게시된 기사라 건너뜁니다.")
             continue
 
-        delay_seconds = get_publish_delay_seconds(publish_attempt_index)
+        delay_seconds = get_publish_delay_seconds(
+            publish_attempt_index,
+            first_publish_delay_seconds,
+        )
 
         if delay_seconds > 0:
             delay_minutes = round(delay_seconds / 60, 1)

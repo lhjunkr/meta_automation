@@ -11,6 +11,8 @@ THREADS_API_VERSION = "v1.0"
 THREADS_API_BASE_URL = f"https://graph.threads.net/{THREADS_API_VERSION}"
 THREADS_CONTAINER_POLL_INTERVAL_SECONDS = 5
 THREADS_CONTAINER_MAX_WAIT_SECONDS = 120
+THREADS_TEXT_MAX_LENGTH = 500
+THREADS_TEXT_TRUNCATION_SUFFIX = "..."
 
 
 def validate_threads_config() -> tuple[str, str]:
@@ -61,11 +63,22 @@ def preflight_threads_publishing() -> dict:
     }
 
 
+def build_threads_post_text(caption: str) -> str:
+    caption = caption.strip()
+
+    if len(caption) <= THREADS_TEXT_MAX_LENGTH:
+        return caption
+
+    max_body_length = THREADS_TEXT_MAX_LENGTH - len(THREADS_TEXT_TRUNCATION_SUFFIX)
+    truncated_caption = caption[:max_body_length].rstrip()
+    return truncated_caption + THREADS_TEXT_TRUNCATION_SUFFIX
+
+
 def create_threads_media_container(article: Article) -> str:
     threads_access_token, threads_user_id = validate_threads_config()
 
     image_url = article.public_image_url
-    caption = article.instagram_caption
+    caption = build_threads_post_text(article.instagram_caption)
 
     if not image_url:
         raise RuntimeError("public_image_url이 없어 Threads 컨테이너를 만들 수 없습니다.")

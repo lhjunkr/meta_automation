@@ -48,7 +48,7 @@ The production runtime is GitHub Actions. The workflow runs automatically every 
 | `time_utils.py` | KST-based date and time helpers |
 | `config.py` | Environment-based runtime settings |
 | `news.py` | Google News collection, URL resolution, and body extraction |
-| `content.py` | Gemini article selection, caption generation with Qwen fallback, and image prompt generation |
+| `content.py` | Gemini article selection, Gemini primary/fallback text generation, Qwen caption fallback, and image prompt generation |
 | `image_generation.py` | Hugging Face image generation with model fallback |
 | `image_rendering.py` | News poster overlay rendering |
 | `storage.py` | Cloudflare R2 upload |
@@ -107,13 +107,19 @@ If all models fail, the article receives the `generation_failed` status and the 
 
 ## Text Generation Strategy
 
-Gemini selects article IDs and generates image prompts. Korean caption generation first uses Gemini, then falls back to Hugging Face Qwen if Gemini fails.
+Gemini selects article IDs, generates Korean captions, and generates SDXL image prompts. All Gemini text calls first use the primary Gemini model, then retry once with the fallback Gemini model for retry-exhausted `429` or `503` API errors.
 
-Current caption model order:
+Current Gemini model order:
 
 ```text
-1. gemini-2.5-flash-lite
-2. Qwen/Qwen2.5-72B-Instruct
+1. gemini-3.5-flash
+2. gemini-3.1-flash-lite
+```
+
+Korean caption generation still falls back to Hugging Face Qwen if both Gemini models fail:
+
+```text
+3. Qwen/Qwen2.5-72B-Instruct
 ```
 
 The model used for each caption is stored in `instagram_caption_model` and included in runtime outputs and email reports.

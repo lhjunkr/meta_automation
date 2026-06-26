@@ -3,10 +3,12 @@ from unittest.mock import Mock, patch
 
 from google.genai import errors
 
-from constants import STATUS_FAILED
+from constants import STATUS_FAILED, STATUS_SUCCESS
 from content import (
+    FALLBACK_GEMINI_MODEL,
     IMAGE_PROMPT_RESPONSE_MARKER,
     MAX_IMAGE_PROMPT_BODY_CHARS,
+    PRIMARY_GEMINI_MODEL,
     build_sdxl_image_prompt,
     generate_sdxl_image_prompt,
     generate_sdxl_image_prompts,
@@ -120,7 +122,7 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(article.sdxl_image_prompt, "")
         self.assertEqual(article.sdxl_image_prompt_status, STATUS_FAILED)
 
-    def test_rate_limit_error_is_recorded_without_additional_retry(self):
+    def test_rate_limit_error_is_recorded_after_gemini_fallback_fails(self):
         article = self.build_article(article_id=4)
         mock_client = Mock()
         mock_client.models.generate_content.side_effect = errors.ClientError(
@@ -134,13 +136,44 @@ class ContentTest(unittest.TestCase):
         ):
             generate_sdxl_image_prompt(article)
 
-        mock_client.models.generate_content.assert_called_once()
+        self.assertEqual(mock_client.models.generate_content.call_count, 2)
         self.assertEqual(article.sdxl_image_prompt, "")
         self.assertEqual(article.sdxl_image_prompt_status, STATUS_FAILED)
 
+    def test_service_unavailable_error_uses_gemini_fallback_model(self):
+        article = self.build_article(article_id=5)
+        mock_client = Mock()
+        mock_client.models.generate_content.side_effect = [
+            errors.ServerError(
+                503,
+                {"error": {"code": 503, "message": "high demand"}},
+            ),
+            Mock(
+                text=(
+                    f"{IMAGE_PROMPT_RESPONSE_MARKER}\n"
+                    "semiconductor production facility, engineers inspecting silicon wafers, "
+                    "Korean industrial setting"
+                )
+            ),
+        ]
+
+        with (
+            patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}),
+            patch("content.genai.Client", return_value=mock_client),
+        ):
+            generate_sdxl_image_prompt(article)
+
+        requested_models = [
+            call.kwargs["model"]
+            for call in mock_client.models.generate_content.call_args_list
+        ]
+        self.assertEqual(requested_models, [PRIMARY_GEMINI_MODEL, FALLBACK_GEMINI_MODEL])
+        self.assertEqual(article.sdxl_image_prompt_status, STATUS_SUCCESS)
+        self.assertNotEqual(article.sdxl_image_prompt, "")
+
     def test_service_unavailable_error_does_not_stop_next_article(self):
-        failed_article = self.build_article(article_id=5)
-        successful_article = self.build_article(article_id=6)
+        failed_article = self.build_article(article_id=6)
+        successful_article = self.build_article(article_id=7)
 
         failed_client = Mock()
         failed_client.models.generate_content.side_effect = errors.ServerError(
@@ -165,7 +198,7 @@ class ContentTest(unittest.TestCase):
         ):
             generate_sdxl_image_prompts([failed_article, successful_article])
 
-        failed_client.models.generate_content.assert_called_once()
+        self.assertEqual(failed_client.models.generate_content.call_count, 2)
         successful_client.models.generate_content.assert_called_once()
         self.assertEqual(failed_article.sdxl_image_prompt_status, STATUS_FAILED)
         self.assertNotEqual(successful_article.sdxl_image_prompt, "")

@@ -13,12 +13,41 @@ from constants import (
 )
 from models import Article
 
-GEMINI_TEXT_MODEL = "gemini-2.5-flash-lite"
+PRIMARY_GEMINI_MODEL = "gemini-3.5-flash"
+FALLBACK_GEMINI_MODEL = "gemini-3.1-flash-lite"
 HF_TEXT_MODEL = "Qwen/Qwen2.5-72B-Instruct"
 MAX_IMAGE_PROMPT_BODY_CHARS = 3000
 IMAGE_PROMPT_RESPONSE_MARKER = "===IMAGE_PROMPT==="
 MIN_IMAGE_PROMPT_LENGTH = 40
 RETRY_EXHAUSTED_STATUS_CODES = {429, 503}
+
+
+def generate_gemini_content_with_fallback(
+    client: genai.Client,
+    contents: str,
+    config: types.GenerateContentConfig,
+) -> tuple[str, str]:
+    for model_name in [PRIMARY_GEMINI_MODEL, FALLBACK_GEMINI_MODEL]:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config,
+            )
+            return (response.text or "").strip(), model_name
+        except errors.APIError as api_error:
+            if api_error.code not in RETRY_EXHAUSTED_STATUS_CODES:
+                raise
+
+            if model_name == FALLBACK_GEMINI_MODEL:
+                raise
+
+            print(
+                " -> Gemini primary 모델 실패 "
+                f"({api_error.code}), fallback 모델로 재시도합니다: {api_error}"
+            )
+
+    raise RuntimeError("Gemini 모델 fallback 순서가 비어 있습니다.")
 
 
 def build_news_context(news_list):
@@ -132,13 +161,13 @@ Backup ID: [Article ID]
 
     client = genai.Client(api_key=api_key)
 
-    response = client.models.generate_content(
-        model=GEMINI_TEXT_MODEL,
+    selected_result, _ = generate_gemini_content_with_fallback(
+        client=client,
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0.2),
     )
 
-    return (response.text or "").strip()
+    return selected_result
 
 
 def parse_selected_ids(selected_result):
@@ -283,20 +312,18 @@ def parse_instagram_caption(raw_text):
     return raw_text.strip()
 
 
-def generate_instagram_caption_with_gemini(article: Article) -> str:
+def generate_instagram_caption_with_gemini(article: Article) -> tuple[str, str]:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError(".env 파일에 GEMINI_API_KEY를 먼저 입력하세요.")
 
     client = genai.Client(api_key=api_key)
 
-    response = client.models.generate_content(
-        model=GEMINI_TEXT_MODEL,
+    return generate_gemini_content_with_fallback(
+        client=client,
         contents=build_instagram_caption_prompt(article),
         config=types.GenerateContentConfig(temperature=0.7),
     )
-
-    return (response.text or "").strip()
 
 
 def generate_instagram_caption_with_qwen(article: Article) -> str:
@@ -341,8 +368,7 @@ def generate_instagram_caption(article: Article) -> Article:
         return article
 
     try:
-        raw_text = generate_instagram_caption_with_gemini(article)
-        caption_model = GEMINI_TEXT_MODEL
+        raw_text, caption_model = generate_instagram_caption_with_gemini(article)
     except Exception as gemini_error:
         print(f" -> Gemini 캡션 생성 실패, Qwen fallback 시도: {gemini_error}")
 
@@ -467,8 +493,8 @@ def generate_sdxl_image_prompt(article: Article) -> Article:
     client = genai.Client(api_key=api_key)
 
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
+        raw_text, _ = generate_gemini_content_with_fallback(
+            client=client,
             contents=build_sdxl_image_prompt(article),
             config=types.GenerateContentConfig(temperature=0.7),
         )
@@ -476,8 +502,8 @@ def generate_sdxl_image_prompt(article: Article) -> Article:
         if api_error.code not in RETRY_EXHAUSTED_STATUS_CODES:
             raise
 
-        # SDK가 자체 재시도를 모두 소진한 429/503만 기사 실패로 격리합니다.
-        # 여기서 다시 호출하지 않아 API 부하와 중복 재시도를 늘리지 않습니다.
+        # primary/fallback 모델이 모두 429/503으로 실패한 경우만 기사 실패로 격리합니다.
+        # 한 기사 실패가 전체 자동화 실행을 중단하지 않도록 하기 위한 경계입니다.
         article.sdxl_image_prompt_raw = ""
         article.sdxl_image_prompt = ""
         article.sdxl_image_prompt_status = STATUS_FAILED
@@ -486,8 +512,6 @@ def generate_sdxl_image_prompt(article: Article) -> Article:
             f"({api_error.code}), 다음 기사로 진행합니다: {api_error}"
         )
         return article
-
-    raw_text = (response.text or "").strip()
 
     article.sdxl_image_prompt_raw = raw_text
 

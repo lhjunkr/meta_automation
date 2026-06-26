@@ -45,7 +45,7 @@ class ReportingTest(unittest.TestCase):
             source="Test source",
             google_link="https://example.com/news",
         )
-        article.instagram_caption_model = "gemini-2.5-flash-lite"
+        article.instagram_caption_model = "gemini-3.5-flash"
         article.image_generation_model = "black-forest-labs/FLUX.1-dev"
         article.instagram_publish_status = STATUS_SUCCESS
         article.instagram_post_id = "instagram-1"
@@ -59,7 +59,7 @@ class ReportingTest(unittest.TestCase):
         self.assertIn("Facebook: 1", report)
         self.assertIn("Threads: 0", report)
         self.assertIn("Title: Uploaded article", report)
-        self.assertIn("Caption/Text Model: gemini-2.5-flash-lite", report)
+        self.assertIn("Caption/Text Model: gemini-3.5-flash", report)
         self.assertIn("Image Model: black-forest-labs/FLUX.1-dev", report)
         self.assertIn("Instagram: success (instagram-1)", report)
         self.assertIn("Facebook: success (facebook-1)", report)

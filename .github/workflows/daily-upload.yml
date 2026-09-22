@@ -13,6 +13,8 @@ jobs:
       contents: read
 
     env:
+      # stdout 블록 버퍼링 때문에 트레이스백과 진행 로그 순서가 뒤섞이면 원인 파악이 어렵습니다.
+      PYTHONUNBUFFERED: "1"
       DRY_RUN: "false"
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}

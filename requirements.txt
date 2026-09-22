@@ -3,7 +3,8 @@ google-genai
 python-dotenv
 trafilatura
 requests
-googlenewsdecoder
+# 0.2.0에서 응답 키가 status -> success로 바뀌는 등 호환성이 깨진 이력이 있어 버전을 고정합니다.
+googlenewsdecoder==0.1.7
 huggingface_hub
 Pillow
 boto3

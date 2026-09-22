@@ -155,17 +155,30 @@ def fetch_top_news():
     return raw_news
 
 
+def is_decoded_result_successful(decoded_result: dict) -> bool:
+    # googlenewsdecoder 0.2.0부터 성공 플래그 키가 status에서 success로 바뀌었습니다.
+    # 두 키를 모두 확인해야 라이브러리 버전이 올라가도 정화 결과를 잃지 않습니다.
+    return bool(decoded_result.get("success") or decoded_result.get("status"))
+
+
 def resolve_article_url(google_link):
     try:
         # Google News RSS 링크는 중계 URL이므로 원문 URL로 정화한 뒤 본문 수집에 사용합니다.
         decoded_result = gnewsdecoder(google_link, interval=1)
 
-        if decoded_result.get("status"):
-            resolved_link = decoded_result["decoded_url"]
-            print(f" -> 원문 URL: {resolved_link}")
-            return resolved_link
+        if is_decoded_result_successful(decoded_result):
+            resolved_link = decoded_result.get("decoded_url", "")
 
-        print(f"URL 정화 실패: {decoded_result.get('message')}")
+            if resolved_link:
+                print(f" -> 원문 URL: {resolved_link}")
+                return resolved_link
+
+            print(f"URL 정화 실패: 응답에 decoded_url이 없습니다 ({decoded_result})")
+            return ""
+
+        # 실패 응답의 키 이름도 버전마다 달라서, 메시지가 없으면 응답 전체를 남깁니다.
+        failure_message = decoded_result.get("message") or decoded_result.get("error")
+        print(f"URL 정화 실패: {failure_message or decoded_result}")
         return ""
 
     except Exception as e:
@@ -177,6 +190,18 @@ def resolve_selected_article_links(selected_articles: list[Article]) -> list[Art
     for article in selected_articles:
         print(f"URL 정화 중: {article.title[:30]}...")
         article.resolved_link = resolve_article_url(article.google_link)
+
+    resolve_failed_count = sum(
+        1 for article in selected_articles if not article.resolved_link
+    )
+
+    # 전건 실패는 개별 기사 문제가 아니라 디코더/구글 쪽 장애일 가능성이 높으므로,
+    # 뒤쪽 단계의 skip 로그에 묻히지 않도록 여기서 한 줄로 경고를 남깁니다.
+    if resolve_failed_count and resolve_failed_count == len(selected_articles):
+        print(
+            f"경고: 선택된 기사 {resolve_failed_count}건의 URL 정화가 모두 실패했습니다. "
+            "googlenewsdecoder 응답 형식 또는 구글 뉴스 접근을 확인하세요."
+        )
 
     return selected_articles
 

@@ -30,10 +30,12 @@ jobs:
           python -m pip install --upgrade pip
           # pygooglenews depends on feedparser 5.x, which still needs setuptools' legacy use_2to3 support.
           pip install "setuptools<58" wheel
-          pip install --no-build-isolation -r requirements.txt
+          # 전이 의존성까지 고정한 락으로 설치합니다. 무핀 설치는 신규 릴리스로 파이프라인이
+          # 깨진 이력이 있습니다(googlenewsdecoder 0.2.1, selectolax 1.0.0).
+          pip install --no-build-isolation -r requirements.lock.txt
 
       - name: Install development dependencies
-        run: pip install -r requirements-dev.txt
+        run: pip install -r requirements-dev.lock.txt
 
       - name: Run Ruff
         run: ruff check .

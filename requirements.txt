@@ -5,6 +5,10 @@ trafilatura
 requests
 # 0.2.0에서 응답 키가 status -> success로 바뀌는 등 호환성이 깨진 이력이 있어 버전을 고정합니다.
 googlenewsdecoder==0.1.7
+# googlenewsdecoder가 selectolax의 Modest 백엔드(selectolax.parser)를 쓰는데,
+# selectolax 1.0에서 제거되어 import 자체가 실패합니다. 0.2.1도 같은 백엔드를 쓰므로
+# 디코더를 올려도 해결되지 않습니다.
+selectolax<1.0
 huggingface_hub
 Pillow
 boto3

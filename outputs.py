@@ -76,7 +76,14 @@ def save_run_report(selected_articles: list[Article], run_dir) -> None:
 
 
 def append_publish_failure_report(selected_articles: list[Article], run_dir) -> None:
-    publish_failure_prefixes = ("instagram:", "facebook:", "threads:", "publish:")
+    publish_failure_prefixes = (
+        "instagram:",
+        "facebook:",
+        "threads:",
+        "instagram_story:",
+        "facebook_story:",
+        "publish:",
+    )
     lines = ["", "Publish Failure Summary", ""]
     failed_articles = []
 
@@ -122,6 +129,8 @@ def save_generated_images(selected_articles: list[Article], run_dir) -> None:
             f.write(f"Overlay Status: {article.image_overlay_status}\n")
             f.write(f"R2 Upload Status: {article.r2_upload_status}\n")
             f.write(f"Public Image URL: {article.public_image_url}\n")
+            f.write(f"Story Image Path: {article.story_image_path}\n")
+            f.write(f"Public Story Image URL: {article.public_story_image_url}\n")
             f.write("\n---\n\n")
 
 
@@ -183,6 +192,18 @@ def save_selected_articles(selected_articles: list[Article], run_dir) -> None:
             f.write(article.threads_post_id)
             f.write("\nThreads Publish Error:\n")
             f.write(article.threads_publish_error)
+            f.write("\n\nInstagram Story Status:\n")
+            f.write(article.instagram_story_status)
+            f.write("\nInstagram Story ID:\n")
+            f.write(article.instagram_story_id)
+            f.write("\nInstagram Story Error:\n")
+            f.write(article.instagram_story_error)
+            f.write("\n\nFacebook Story Status:\n")
+            f.write(article.facebook_story_status)
+            f.write("\nFacebook Story ID:\n")
+            f.write(article.facebook_story_id)
+            f.write("\nFacebook Story Error:\n")
+            f.write(article.facebook_story_error)
             f.write("\n\nOverall Publish Status:\n")
             f.write(article.publish_status)
             f.write("\n\n---\n\n")

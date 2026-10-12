@@ -37,6 +37,22 @@ class ReportingTest(unittest.TestCase):
 
         self.assertIn("threads:failed", report)
 
+    def test_failure_report_includes_story_failures(self):
+        article = Article(
+            id=1,
+            category="경제(US)",
+            title="Test title",
+            source="Test source",
+            google_link="https://example.com/news",
+        )
+        article.instagram_story_status = STATUS_FAILED
+        article.facebook_story_status = STATUS_SUCCESS
+
+        report = build_run_failure_report([article])
+
+        self.assertIn("instagram_story:failed", report)
+        self.assertNotIn("facebook_story:", report)
+
     def test_execution_report_includes_channel_counts_and_models(self):
         article = Article(
             id=1,
@@ -52,6 +68,9 @@ class ReportingTest(unittest.TestCase):
         article.facebook_publish_status = STATUS_SUCCESS
         article.facebook_post_id = "facebook-1"
         article.threads_publish_status = STATUS_FAILED
+        article.instagram_story_status = STATUS_SUCCESS
+        article.instagram_story_id = "instagram-story-1"
+        article.facebook_story_status = STATUS_FAILED
 
         report = build_run_execution_report([article])
 
@@ -64,6 +83,10 @@ class ReportingTest(unittest.TestCase):
         self.assertIn("Instagram: success (instagram-1)", report)
         self.assertIn("Facebook: success (facebook-1)", report)
         self.assertIn("Threads: failed", report)
+        self.assertIn("Instagram Story: 1", report)
+        self.assertIn("Facebook Story: 0", report)
+        self.assertIn("Instagram Story: success (instagram-story-1)", report)
+        self.assertIn("Facebook Story: failed", report)
 
 
 if __name__ == "__main__":

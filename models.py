@@ -39,6 +39,9 @@ class Article:
     public_image_url: str = ""
     r2_upload_status: str = ""
 
+    story_image_path: str = ""
+    public_story_image_url: str = ""
+
     instagram_publish_status: str = ""
     instagram_post_id: str = ""
     instagram_publish_error: str = ""
@@ -50,6 +53,14 @@ class Article:
     threads_publish_status: str = ""
     threads_post_id: str = ""
     threads_publish_error: str = ""
+
+    instagram_story_status: str = ""
+    instagram_story_id: str = ""
+    instagram_story_error: str = ""
+
+    facebook_story_status: str = ""
+    facebook_story_id: str = ""
+    facebook_story_error: str = ""
 
     publish_status: str = ""
 
@@ -103,6 +114,8 @@ class Article:
             image_overlay_status=article_data.get("image_overlay_status", ""),
             public_image_url=article_data.get("public_image_url", ""),
             r2_upload_status=article_data.get("r2_upload_status", ""),
+            story_image_path=article_data.get("story_image_path", ""),
+            public_story_image_url=article_data.get("public_story_image_url", ""),
             instagram_publish_status=article_data.get("instagram_publish_status", ""),
             instagram_post_id=article_data.get("instagram_post_id", ""),
             instagram_publish_error=article_data.get("instagram_publish_error", ""),
@@ -112,6 +125,12 @@ class Article:
             threads_publish_status=article_data.get("threads_publish_status", ""),
             threads_post_id=article_data.get("threads_post_id", ""),
             threads_publish_error=article_data.get("threads_publish_error", ""),
+            instagram_story_status=article_data.get("instagram_story_status", ""),
+            instagram_story_id=article_data.get("instagram_story_id", ""),
+            instagram_story_error=article_data.get("instagram_story_error", ""),
+            facebook_story_status=article_data.get("facebook_story_status", ""),
+            facebook_story_id=article_data.get("facebook_story_id", ""),
+            facebook_story_error=article_data.get("facebook_story_error", ""),
             publish_status=article_data.get("publish_status", ""),
             extra_fields=extra_fields,
         )
@@ -150,6 +169,8 @@ class Article:
                 "image_overlay_status": self.image_overlay_status,
                 "public_image_url": self.public_image_url,
                 "r2_upload_status": self.r2_upload_status,
+                "story_image_path": self.story_image_path,
+                "public_story_image_url": self.public_story_image_url,
                 "instagram_publish_status": self.instagram_publish_status,
                 "instagram_post_id": self.instagram_post_id,
                 "instagram_publish_error": self.instagram_publish_error,
@@ -159,6 +180,12 @@ class Article:
                 "threads_publish_status": self.threads_publish_status,
                 "threads_post_id": self.threads_post_id,
                 "threads_publish_error": self.threads_publish_error,
+                "instagram_story_status": self.instagram_story_status,
+                "instagram_story_id": self.instagram_story_id,
+                "instagram_story_error": self.instagram_story_error,
+                "facebook_story_status": self.facebook_story_status,
+                "facebook_story_id": self.facebook_story_id,
+                "facebook_story_error": self.facebook_story_error,
                 "publish_status": self.publish_status,
             }
         )

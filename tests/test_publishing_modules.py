@@ -1,10 +1,21 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from constants import STATUS_FAILED, STATUS_PUBLISHED, STATUS_SUCCESS
-from facebook_publishing import publish_article_to_facebook_page
+from constants import (
+    STATUS_FAILED,
+    STATUS_PUBLISHED,
+    STATUS_SUCCESS,
+    STORY_STATUS_SKIPPED_FEED_NOT_PUBLISHED,
+    STORY_STATUS_SKIPPED_NO_STORY_IMAGE,
+)
+from facebook_publishing import (
+    publish_article_story_to_facebook_page,
+    publish_article_to_facebook_page,
+)
 from instagram_publishing import (
+    create_instagram_story_container,
     is_retryable_instagram_publish_error,
+    publish_article_story_to_instagram,
     publish_article_to_instagram,
     publish_instagram_media_with_retry,
 )
@@ -12,6 +23,7 @@ from models import Article
 from publishing import (
     get_first_publish_delay_seconds,
     get_publish_delay_seconds,
+    publish_article_stories,
     publish_to_social_channels,
 )
 from threads_publishing import (
@@ -32,7 +44,14 @@ def build_publishable_article() -> Article:
     )
     article.instagram_caption = "테스트 캡션입니다."
     article.public_image_url = "https://example.com/final.png"
+    article.public_story_image_url = "https://example.com/story.jpg"
     return article
+
+
+def build_json_response(status_code: int, data: dict) -> Mock:
+    response = Mock(status_code=status_code)
+    response.json.return_value = data
+    return response
 
 
 class PublishingModulesTest(unittest.TestCase):
@@ -61,6 +80,120 @@ class PublishingModulesTest(unittest.TestCase):
         self.assertEqual(article.facebook_publish_status, STATUS_FAILED)
         self.assertEqual(article.facebook_post_id, "")
         self.assertIn("Facebook 게시 실패", article.facebook_publish_error)
+
+    @patch("facebook_publishing.requests.post")
+    def test_facebook_story_uploads_unpublished_photo_then_publishes_story(self, mock_post):
+        mock_post.side_effect = [
+            build_json_response(200, {"id": "facebook-photo-1"}),
+            build_json_response(200, {"success": True, "post_id": "facebook-story-1"}),
+        ]
+
+        article = build_publishable_article()
+        publish_article_story_to_facebook_page(article)
+
+        photo_call, story_call = mock_post.call_args_list
+        self.assertTrue(photo_call.args[0].endswith("/photos"))
+        self.assertEqual(photo_call.kwargs["data"]["published"], "false")
+        self.assertEqual(photo_call.kwargs["data"]["url"], "https://example.com/story.jpg")
+        self.assertTrue(story_call.args[0].endswith("/photo_stories"))
+        self.assertEqual(story_call.kwargs["data"]["photo_id"], "facebook-photo-1")
+        self.assertEqual(article.facebook_story_status, STATUS_SUCCESS)
+        self.assertEqual(article.facebook_story_id, "facebook-story-1")
+        self.assertEqual(article.facebook_story_error, "")
+
+    @patch("facebook_publishing.requests.post")
+    def test_facebook_story_failure_updates_article(self, mock_post):
+        mock_post.side_effect = [
+            build_json_response(200, {"id": "facebook-photo-1"}),
+            build_json_response(400, {"error": {"message": "permission denied"}}),
+        ]
+
+        article = build_publishable_article()
+        publish_article_story_to_facebook_page(article)
+
+        self.assertEqual(article.facebook_story_status, STATUS_FAILED)
+        self.assertEqual(article.facebook_story_id, "")
+        self.assertIn("Facebook 스토리 게시 실패", article.facebook_story_error)
+
+    @patch("instagram_publishing.requests.post")
+    def test_instagram_story_container_uses_stories_media_type(self, mock_post):
+        mock_post.return_value = build_json_response(200, {"id": "instagram-story-container-1"})
+
+        article = build_publishable_article()
+        creation_id = create_instagram_story_container(article)
+
+        payload = mock_post.call_args.kwargs["data"]
+        self.assertEqual(creation_id, "instagram-story-container-1")
+        self.assertEqual(payload["media_type"], "STORIES")
+        self.assertEqual(payload["image_url"], "https://example.com/story.jpg")
+        self.assertNotIn("caption", payload)
+
+    @patch("instagram_publishing.publish_instagram_media")
+    @patch("instagram_publishing.wait_for_instagram_media_container")
+    @patch("instagram_publishing.create_instagram_story_container")
+    def test_instagram_story_publish_success_updates_article(
+        self,
+        mock_create_container,
+        mock_wait_for_container,
+        mock_publish_media,
+    ):
+        mock_create_container.return_value = "instagram-story-container-1"
+        mock_publish_media.return_value = "instagram-story-1"
+
+        article = build_publishable_article()
+        publish_article_story_to_instagram(article)
+
+        mock_wait_for_container.assert_called_once_with("instagram-story-container-1")
+        self.assertEqual(article.instagram_story_status, STATUS_SUCCESS)
+        self.assertEqual(article.instagram_story_id, "instagram-story-1")
+        self.assertEqual(article.instagram_story_error, "")
+
+    @patch("instagram_publishing.create_instagram_story_container")
+    def test_instagram_story_publish_failure_updates_article(self, mock_create_container):
+        mock_create_container.side_effect = RuntimeError("story container failed")
+
+        article = build_publishable_article()
+        publish_article_story_to_instagram(article)
+
+        self.assertEqual(article.instagram_story_status, STATUS_FAILED)
+        self.assertEqual(article.instagram_story_id, "")
+        self.assertIn("story container failed", article.instagram_story_error)
+
+    @patch("publishing.publish_article_story_to_facebook_page")
+    @patch("publishing.publish_article_story_to_instagram")
+    def test_stories_are_published_only_for_successful_feed_channels(
+        self,
+        mock_publish_instagram_story,
+        mock_publish_facebook_story,
+    ):
+        article = build_publishable_article()
+        article.instagram_publish_status = STATUS_SUCCESS
+        article.facebook_publish_status = STATUS_FAILED
+
+        publish_article_stories(article)
+
+        mock_publish_instagram_story.assert_called_once_with(article)
+        mock_publish_facebook_story.assert_not_called()
+        self.assertEqual(article.facebook_story_status, STORY_STATUS_SKIPPED_FEED_NOT_PUBLISHED)
+
+    @patch("publishing.publish_article_story_to_facebook_page")
+    @patch("publishing.publish_article_story_to_instagram")
+    def test_stories_are_skipped_without_story_image(
+        self,
+        mock_publish_instagram_story,
+        mock_publish_facebook_story,
+    ):
+        article = build_publishable_article()
+        article.public_story_image_url = ""
+        article.instagram_publish_status = STATUS_SUCCESS
+        article.facebook_publish_status = STATUS_SUCCESS
+
+        publish_article_stories(article)
+
+        mock_publish_instagram_story.assert_not_called()
+        mock_publish_facebook_story.assert_not_called()
+        self.assertEqual(article.instagram_story_status, STORY_STATUS_SKIPPED_NO_STORY_IMAGE)
+        self.assertEqual(article.facebook_story_status, STORY_STATUS_SKIPPED_NO_STORY_IMAGE)
 
     @patch("instagram_publishing.publish_instagram_media")
     @patch("instagram_publishing.wait_for_instagram_media_container")
@@ -202,6 +335,7 @@ class PublishingModulesTest(unittest.TestCase):
         self.assertLessEqual(sum(delay_seconds), 15 * 60)
         mock_randint.assert_called_once_with(0, 5 * 60)
 
+    @patch("publishing.publish_article_stories")
     @patch("publishing.publish_article_to_threads")
     @patch("publishing.publish_article_to_facebook_page")
     @patch("publishing.publish_article_to_instagram")
@@ -220,6 +354,7 @@ class PublishingModulesTest(unittest.TestCase):
         mock_publish_instagram,
         mock_publish_facebook,
         mock_publish_threads,
+        mock_publish_stories,
     ):
         def mark_instagram_success(article: Article) -> Article:
             article.instagram_publish_status = STATUS_SUCCESS
@@ -241,6 +376,7 @@ class PublishingModulesTest(unittest.TestCase):
         mock_publish_instagram.assert_called_once_with(article)
         mock_publish_facebook.assert_called_once_with(article)
         mock_publish_threads.assert_not_called()
+        mock_publish_stories.assert_called_once_with(article)
         self.assertEqual(published_articles, [article])
         self.assertEqual(article.publish_status, STATUS_PUBLISHED)
         self.assertEqual(article.threads_publish_status, STATUS_FAILED)

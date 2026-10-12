@@ -14,6 +14,8 @@ class ArticleModelTest(unittest.TestCase):
                 "google_link": "https://example.com/news",
                 "instagram_caption_model": "gemini-3.5-flash",
                 "threads_post_id": "threads-123",
+                "public_story_image_url": "https://example.com/story.jpg",
+                "instagram_story_id": "instagram-story-123",
                 "unknown_runtime_field": "keep-me",
                 "backup_article": {
                     "id": 2,
@@ -31,6 +33,9 @@ class ArticleModelTest(unittest.TestCase):
         self.assertEqual(article.category, "경제(US)")
         self.assertEqual(article.instagram_caption_model, "gemini-3.5-flash")
         self.assertEqual(article.threads_post_id, "threads-123")
+        self.assertEqual(article_data["public_story_image_url"], "https://example.com/story.jpg")
+        self.assertEqual(article_data["instagram_story_id"], "instagram-story-123")
+        self.assertNotIn("instagram_story_id", article.extra_fields)
         backup_article = article.backup_article
 
         self.assertIsNotNone(backup_article)

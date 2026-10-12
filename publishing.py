@@ -5,17 +5,25 @@ import time
 import requests
 from dotenv import load_dotenv
 
-from config import get_int_env
+from config import get_int_env, is_stories_enabled
 from constants import (
     PUBLISH_STATUS_SKIPPED_ALREADY_PUBLISHED,
     PUBLISH_STATUS_SKIPPED_NO_PUBLIC_IMAGE_URL,
     STATUS_FAILED,
     STATUS_PUBLISHED,
     STATUS_SUCCESS,
+    STORY_STATUS_SKIPPED_FEED_NOT_PUBLISHED,
+    STORY_STATUS_SKIPPED_NO_STORY_IMAGE,
 )
-from facebook_publishing import publish_article_to_facebook_page
+from facebook_publishing import (
+    publish_article_story_to_facebook_page,
+    publish_article_to_facebook_page,
+)
 from history import count_today_published, is_already_published
-from instagram_publishing import publish_article_to_instagram
+from instagram_publishing import (
+    publish_article_story_to_instagram,
+    publish_article_to_instagram,
+)
 from models import Article
 from threads_publishing import preflight_threads_publishing, publish_article_to_threads
 
@@ -130,6 +138,25 @@ def get_publish_delay_seconds(
     return max(post_spacing_minutes, 0) * 60
 
 
+def publish_article_stories(article: Article) -> Article:
+    # 스토리는 피드 게시물과 짝을 이루므로 해당 채널 피드가 성공한 경우에만 올립니다.
+    if article.instagram_publish_status != STATUS_SUCCESS:
+        article.instagram_story_status = STORY_STATUS_SKIPPED_FEED_NOT_PUBLISHED
+    elif not article.public_story_image_url:
+        article.instagram_story_status = STORY_STATUS_SKIPPED_NO_STORY_IMAGE
+    else:
+        publish_article_story_to_instagram(article)
+
+    if article.facebook_publish_status != STATUS_SUCCESS:
+        article.facebook_story_status = STORY_STATUS_SKIPPED_FEED_NOT_PUBLISHED
+    elif not article.public_story_image_url:
+        article.facebook_story_status = STORY_STATUS_SKIPPED_NO_STORY_IMAGE
+    else:
+        publish_article_story_to_facebook_page(article)
+
+    return article
+
+
 def publish_to_social_channels(selected_articles: list[Article]) -> list[Article]:
     preflight_meta_publishing()
     threads_publish_enabled = True
@@ -142,6 +169,7 @@ def publish_to_social_channels(selected_articles: list[Article]) -> list[Article
         threads_preflight_error = str(e)
         print(f" -> Threads preflight 실패, Threads 게시만 건너뜁니다: {e}")
 
+    stories_enabled = is_stories_enabled()
     published_articles: list[Article] = []
     max_daily_posts = get_int_env("MAX_DAILY_POSTS", 3)
     already_published_today = count_today_published()
@@ -190,7 +218,10 @@ def publish_to_social_channels(selected_articles: list[Article]) -> list[Article
             article.threads_post_id = ""
             article.threads_publish_error = f"Threads preflight 실패: {threads_preflight_error}"
 
-        # Threads는 보조 채널이므로 preflight 실패가 Instagram/Facebook 게시 성공을 막지 않습니다.
+        if stories_enabled:
+            publish_article_stories(article)
+
+        # Threads와 스토리는 보조 채널이므로 실패해도 Instagram/Facebook 피드 게시 성공을 막지 않습니다.
         # 채널별 실패 원인은 Article에 남겨 이메일 리포트와 산출물에서 추적합니다.
         if (
             article.instagram_publish_status == STATUS_SUCCESS

@@ -34,8 +34,8 @@ Every day at **06:23 KST**, GitHub Actions runs the full pipeline with zero manu
 | 🤖 **Curate** | Gemini | Picks one primary + one backup article per category |
 | ✍️ **Caption** | Gemini → Qwen | Writes a Korean caption, with a Hugging Face fallback |
 | 🎨 **Render** | FLUX + Pillow | Generates a poster image and overlays the news headline |
-| ☁️ **Upload** | Cloudflare R2 | Stores the final poster at a public URL |
-| 📤 **Publish** | Meta Graph API | Posts to Instagram, Facebook Page, and Threads |
+| ☁️ **Upload** | Cloudflare R2 | Stores the final poster and its 9:16 story version at public URLs |
+| 📤 **Publish** | Meta Graph API | Posts to Instagram, Facebook Page, and Threads, plus Instagram and Facebook stories |
 | 📧 **Report** | SMTP + Artifacts | Emails a run summary and uploads outputs as CI artifacts |
 
 Resilience is built in at every stage: image models, caption models, and body extractors each have a fallback chain, and a failing primary article is automatically replaced by its category backup.
@@ -173,6 +173,12 @@ If the primary article fails, the backup is processed. If both fail, the categor
 - `THREADS_ACCESS_TOKEN` can access `THREADS_USER_ID`
 - If it fails, Instagram and Facebook still publish; the Threads error is written to the article status and email report.
 
+**Stories** — also treated as auxiliary channels (`ENABLE_STORIES=true` by default):
+
+- Each poster is re-rendered as a 1080×1920 JPEG (blurred background, poster centered) and uploaded to R2 alongside the feed image.
+- An Instagram story (`media_type=STORIES`) and a Facebook Page story (`/photo_stories`) are posted only after that channel's feed post succeeds.
+- Story failures are recorded in the article status and email report but never fail the run. The existing tokens are reused; Facebook stories need `pages_manage_posts` on the Page token.
+
 > **Tip:** For long-term operation, use a Meta Business System User token with the required Page and Instagram assets assigned. Instagram and Facebook credentials are split intentionally so each channel can be rotated or debugged independently. Threads uses a separate long-lived token that should be refreshed before expiration.
 
 ---
@@ -296,6 +302,7 @@ THREADS_USER_ID=
 MAX_DAILY_POSTS=3
 UPLOAD_WINDOW_MINUTES=15
 POST_SPACING_MINUTES=5
+ENABLE_STORIES=true
 ```
 
 > Production values are managed through GitHub Actions Secrets. If local `.env` values differ, local publish verification is not authoritative.

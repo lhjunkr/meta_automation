@@ -30,6 +30,8 @@ def append_publish_history(selected_articles: list[Article], status: str = STATU
                 "instagram_post_id": article.instagram_post_id,
                 "facebook_post_id": article.facebook_post_id,
                 "threads_post_id": article.threads_post_id,
+                "instagram_story_id": article.instagram_story_id,
+                "facebook_story_id": article.facebook_story_id,
                 "final_image_path": article.final_image_path,
                 "public_image_url": article.public_image_url,
             }

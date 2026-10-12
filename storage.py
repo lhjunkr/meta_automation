@@ -35,7 +35,7 @@ def create_r2_client():
     )
 
 
-def upload_image_to_r2(local_path, object_key):
+def upload_image_to_r2(local_path, object_key, content_type="image/png"):
     load_dotenv()
 
     bucket_name = os.getenv("R2_BUCKET_NAME")
@@ -52,12 +52,12 @@ def upload_image_to_r2(local_path, object_key):
     client = create_r2_client()
 
     try:
-        # Meta Graph API가 image_url을 다시 가져가므로 공개 URL에서 PNG로 인식되도록 Content-Type을 고정합니다.
+        # Meta Graph API가 image_url을 다시 가져가므로 공개 URL에서 이미지 형식이 인식되도록 Content-Type을 고정합니다.
         client.upload_file(
             str(local_path),
             bucket_name,
             object_key,
-            ExtraArgs={"ContentType": "image/png"},
+            ExtraArgs={"ContentType": content_type},
         )
     except ClientError as e:
         raise RuntimeError(f"R2 업로드 실패: {e}") from e
@@ -275,4 +275,30 @@ def upload_article_images_to_r2(selected_articles: list[Article], run_dir) -> li
         article.r2_upload_status = STATUS_SUCCESS
         print(f" -> R2 업로드 완료: {public_url}")
 
+        upload_article_story_image_to_r2(article, run_date)
+
     return selected_articles
+
+
+def upload_article_story_image_to_r2(article: Article, run_date: str) -> Article:
+    if not article.story_image_path:
+        article.public_story_image_url = ""
+        return article
+
+    object_key = f"{run_date}/article_{article.id}_story.jpg"
+
+    try:
+        public_url = upload_image_to_r2(
+            article.story_image_path,
+            object_key,
+            content_type="image/jpeg",
+        )
+    except Exception as e:
+        # 스토리 이미지 업로드 실패는 피드 게시 대상 판정(r2_upload_status)에 영향을 주지 않습니다.
+        article.public_story_image_url = ""
+        print(f" -> R2 스토리 이미지 업로드 실패: {e}")
+        return article
+
+    article.public_story_image_url = public_url
+    print(f" -> R2 스토리 이미지 업로드 완료: {public_url}")
+    return article

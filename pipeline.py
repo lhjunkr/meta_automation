@@ -2,7 +2,7 @@ from constants import STATUS_FAILED, STATUS_PUBLISHED, STATUS_SUCCESS
 from content import generate_instagram_captions, generate_sdxl_image_prompts
 from history import append_publish_history
 from image_generation import generate_huggingface_images
-from image_rendering import render_news_image_overlays
+from image_rendering import render_news_image_overlays, render_story_images
 from models import Article
 from news import fetch_selected_article_bodies, resolve_selected_article_links
 from outputs import (
@@ -40,6 +40,7 @@ def process_content_pipeline(selected_articles: list[Article], run_dir) -> list[
 
     selected_articles = generate_huggingface_images(selected_articles, run_dir)
     selected_articles = render_news_image_overlays(selected_articles)
+    selected_articles = render_story_images(selected_articles)
     selected_articles = upload_article_images_to_r2(selected_articles, run_dir)
     save_generated_images(selected_articles, run_dir)
 

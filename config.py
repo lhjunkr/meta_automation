@@ -15,3 +15,8 @@ def get_int_env(name, default):
 def is_dry_run():
     load_dotenv()
     return os.getenv("DRY_RUN", "false").lower() == "true"
+
+
+def is_stories_enabled():
+    load_dotenv()
+    return os.getenv("ENABLE_STORIES", "true").lower() == "true"

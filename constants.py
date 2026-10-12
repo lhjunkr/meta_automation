@@ -21,3 +21,6 @@ R2_UPLOAD_STATUS_FAILED = "upload_failed"
 
 PUBLISH_STATUS_SKIPPED_NO_PUBLIC_IMAGE_URL = "skipped_no_public_image_url"
 PUBLISH_STATUS_SKIPPED_ALREADY_PUBLISHED = "skipped_already_published"
+
+STORY_STATUS_SKIPPED_NO_STORY_IMAGE = "skipped_no_story_image"
+STORY_STATUS_SKIPPED_FEED_NOT_PUBLISHED = "skipped_feed_not_published"

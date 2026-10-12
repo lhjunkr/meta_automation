@@ -9,6 +9,8 @@ CHANNEL_STATUS_FIELDS = {
     "Instagram": ("instagram_publish_status", "instagram_post_id"),
     "Facebook": ("facebook_publish_status", "facebook_post_id"),
     "Threads": ("threads_publish_status", "threads_post_id"),
+    "Instagram Story": ("instagram_story_status", "instagram_story_id"),
+    "Facebook Story": ("facebook_story_status", "facebook_story_id"),
 }
 
 
@@ -71,6 +73,18 @@ def build_article_failure_summary(article: Article) -> list[str]:
         and article.threads_publish_status != STATUS_SUCCESS
     ):
         failure_reasons.append(f"threads:{article.threads_publish_status}")
+
+    if (
+        article.instagram_story_status
+        and article.instagram_story_status != STATUS_SUCCESS
+    ):
+        failure_reasons.append(f"instagram_story:{article.instagram_story_status}")
+
+    if (
+        article.facebook_story_status
+        and article.facebook_story_status != STATUS_SUCCESS
+    ):
+        failure_reasons.append(f"facebook_story:{article.facebook_story_status}")
 
     if article.publish_status and article.publish_status not in {
         STATUS_PUBLISHED,
@@ -140,6 +154,8 @@ def build_run_execution_report(selected_articles: list[Article]) -> str:
                 build_channel_status_line(article, "Instagram"),
                 build_channel_status_line(article, "Facebook"),
                 build_channel_status_line(article, "Threads"),
+                build_channel_status_line(article, "Instagram Story"),
+                build_channel_status_line(article, "Facebook Story"),
                 "",
             ]
         )

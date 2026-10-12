@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from constants import (
     IMAGE_OVERLAY_STATUS_FILE_MISSING,
@@ -10,6 +10,10 @@ from constants import (
 )
 from models import Article
 from time_utils import now_kst
+
+STORY_IMAGE_SIZE = (1080, 1920)
+STORY_BACKGROUND_BLUR_RADIUS = 40
+STORY_BACKGROUND_DIM_ALPHA = 90
 
 
 def load_korean_font(size, bold=False):
@@ -208,5 +212,63 @@ def render_news_image_overlays(selected_articles: list[Article]) -> list[Article
     for article in selected_articles:
         print(f"이미지 텍스트 합성 중: {article.title[:30]}...")
         render_news_image_overlay(article)
+
+    return selected_articles
+
+
+def build_story_image(poster_image):
+    story_width, story_height = STORY_IMAGE_SIZE
+    poster_image = poster_image.convert("RGB")
+    poster_width, poster_height = poster_image.size
+
+    # 9:16 화면을 꽉 채우도록 확대한 포스터를 흐리게 깔아 위아래 빈 공간을 메웁니다.
+    cover_scale = max(story_width / poster_width, story_height / poster_height)
+    cover_size = (round(poster_width * cover_scale), round(poster_height * cover_scale))
+    background = poster_image.resize(cover_size, Image.Resampling.LANCZOS)
+    crop_left = (cover_size[0] - story_width) // 2
+    crop_top = (cover_size[1] - story_height) // 2
+    background = background.crop(
+        (crop_left, crop_top, crop_left + story_width, crop_top + story_height)
+    )
+    background = background.filter(ImageFilter.GaussianBlur(STORY_BACKGROUND_BLUR_RADIUS))
+    dim_layer = Image.new("RGB", STORY_IMAGE_SIZE, (0, 0, 0))
+    background = Image.blend(background, dim_layer, STORY_BACKGROUND_DIM_ALPHA / 255)
+
+    # 제목 오버레이가 잘리지 않도록 원본 포스터는 가로 폭에 맞춰 가운데에 그대로 둡니다.
+    fit_scale = story_width / poster_width
+    poster_size = (story_width, round(poster_height * fit_scale))
+    poster = poster_image.resize(poster_size, Image.Resampling.LANCZOS)
+    background.paste(poster, (0, (story_height - poster_size[1]) // 2))
+
+    return background
+
+
+def render_story_image(article: Article) -> Article:
+    final_image_path = article.final_image_path
+    if not final_image_path or not Path(final_image_path).exists():
+        article.story_image_path = ""
+        return article
+
+    final_path = Path(final_image_path)
+    story_path = final_path.with_name(f"{final_path.stem.removesuffix('_final')}_story.jpg")
+
+    try:
+        with Image.open(final_path) as poster_image:
+            story_image = build_story_image(poster_image)
+        story_image.save(story_path, format="JPEG", quality=95)
+    except Exception as e:
+        # 스토리는 보조 산출물이라 실패해도 피드 게시 파이프라인은 그대로 진행합니다.
+        article.story_image_path = ""
+        print(f" -> 스토리 이미지 생성 실패: {e}")
+        return article
+
+    article.story_image_path = str(story_path)
+    return article
+
+
+def render_story_images(selected_articles: list[Article]) -> list[Article]:
+    for article in selected_articles:
+        print(f"스토리 이미지 생성 중: {article.title[:30]}...")
+        render_story_image(article)
 
     return selected_articles

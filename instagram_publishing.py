@@ -49,6 +49,35 @@ def create_instagram_media_container(article: Article) -> str:
     return data["id"]
 
 
+def create_instagram_story_container(article: Article) -> str:
+    load_dotenv()
+
+    access_token = os.getenv("META_ACCESS_TOKEN")
+    ig_user_id = os.getenv("IG_USER_ID")
+
+    image_url = article.public_story_image_url
+
+    if not image_url:
+        raise RuntimeError("public_story_image_url이 없어 Instagram 스토리 컨테이너를 만들 수 없습니다.")
+
+    # 스토리는 API에서 캡션을 받지 않으므로 9:16 이미지 URL만 전달합니다.
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{ig_user_id}/media"
+
+    payload = {
+        "image_url": image_url,
+        "media_type": "STORIES",
+        "access_token": access_token,
+    }
+
+    response = requests.post(url, data=payload, timeout=30)
+    data = response.json()
+
+    if response.status_code >= 400 or "id" not in data:
+        raise RuntimeError(f"Instagram 스토리 컨테이너 생성 실패: {data}")
+
+    return data["id"]
+
+
 def fetch_instagram_media_container_status(creation_id: str) -> dict:
     load_dotenv()
 
@@ -173,5 +202,27 @@ def publish_article_to_instagram(article: Article) -> Article:
         article.instagram_publish_error = str(e)
 
         print(f" -> Instagram 게시 실패: {e}")
+
+    return article
+
+
+def publish_article_story_to_instagram(article: Article) -> Article:
+    try:
+        creation_id = create_instagram_story_container(article)
+        wait_for_instagram_media_container(creation_id)
+        instagram_story_id = publish_instagram_media_with_retry(creation_id)
+
+        article.instagram_story_status = STATUS_SUCCESS
+        article.instagram_story_id = instagram_story_id
+        article.instagram_story_error = ""
+
+        print(f" -> Instagram 스토리 게시 완료: {instagram_story_id}")
+
+    except Exception as e:
+        article.instagram_story_status = STATUS_FAILED
+        article.instagram_story_id = ""
+        article.instagram_story_error = str(e)
+
+        print(f" -> Instagram 스토리 게시 실패: {e}")
 
     return article

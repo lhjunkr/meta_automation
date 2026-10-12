@@ -32,6 +32,7 @@ jobs:
       MAX_DAILY_POSTS: "3"
       UPLOAD_WINDOW_MINUTES: "15"
       POST_SPACING_MINUTES: "5"
+      ENABLE_STORIES: "true"
 
     steps:
       - name: Checkout repository

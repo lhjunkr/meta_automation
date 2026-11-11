@@ -1,357 +1,211 @@
 # Meta Automation
 
-> Fully automated daily news-to-social pipeline. Collects news, curates with Gemini, generates Korean captions and poster images, and publishes to Instagram, Facebook, and Threads — hands-free, every morning.
+매일 아침 뉴스 기사를 골라 헤드라인 포스터 이미지와 한국어 캡션을 만들고, Instagram·Facebook·Threads에 자동으로 게시하는 프로젝트다. GitHub Actions에서 매일 06:23(KST)에 실행된다.
 
 <p>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white">
-  <img alt="GitHub Actions" src="https://img.shields.io/badge/Runtime-GitHub_Actions-2088FF?logo=githubactions&logoColor=white">
-  <img alt="Schedule" src="https://img.shields.io/badge/Schedule-06:23_KST_daily-16A34A">
-  <img alt="License" src="https://img.shields.io/badge/Mode-DRY__RUN=false-DC2626">
-</p>
-
-<p>
+  <img alt="GitHub Actions" src="https://img.shields.io/badge/GitHub_Actions-2088FF?logo=githubactions&logoColor=white">
   <img alt="Gemini" src="https://img.shields.io/badge/Google_Gemini-8E75B2?logo=googlegemini&logoColor=white">
   <img alt="Hugging Face" src="https://img.shields.io/badge/Hugging_Face-FFD21E?logo=huggingface&logoColor=black">
   <img alt="Cloudflare R2" src="https://img.shields.io/badge/Cloudflare_R2-F38020?logo=cloudflare&logoColor=white">
-  <img alt="Instagram" src="https://img.shields.io/badge/Instagram-E4405F?logo=instagram&logoColor=white">
-  <img alt="Facebook" src="https://img.shields.io/badge/Facebook-1877F2?logo=facebook&logoColor=white">
-  <img alt="Threads" src="https://img.shields.io/badge/Threads-000000?logo=threads&logoColor=white">
+  <img alt="Meta Graph API" src="https://img.shields.io/badge/Meta_Graph_API-0467DF?logo=meta&logoColor=white">
 </p>
 
----
+## 동작 과정
 
-## ✨ What it does
+1. **뉴스 수집** — Google News에서 종합(KR), 경제(KR), 경제(US) 세 카테고리의 헤드라인을 카테고리당 최대 10개씩 가져온다. 제외 언론사(`news.py`의 `EXCLUDED_SOURCE_KEYWORDS`)와 이미 게시한 기사는 여기서 뺀다.
+2. **기사 선정** — Gemini가 카테고리마다 메인 기사 1개와 예비 기사 1개를 고른다.
+3. **본문 추출** — Google News 중계 링크를 원문 URL로 바꾼 뒤 본문을 가져온다.
+4. **캡션 작성** — 기사 본문으로 Gemini가 한국어 캡션을 쓴다.
+5. **이미지 생성** — 캡션을 바탕으로 이미지 프롬프트를 만들고, Hugging Face FLUX 모델로 이미지를 생성한 뒤 Pillow로 헤드라인을 얹는다. 스토리용 1080×1920 이미지도 같이 만든다.
+6. **업로드** — 완성된 이미지를 Cloudflare R2에 올린다. Meta API가 공개 이미지 URL을 받아 가는 방식이라 R2를 이미지 호스팅으로 쓴다.
+7. **게시** — Instagram, Facebook 페이지, Threads에 피드를 올리고 Instagram·Facebook에는 스토리도 올린다.
+8. **리포트** — 실행 결과를 이메일로 받고, 산출물은 Actions 아티팩트로 남긴다.
 
-Every day at **06:23 KST**, GitHub Actions runs the full pipeline with zero manual input:
+메인 기사가 중간 단계에서 실패하면 같은 카테고리의 예비 기사로 처음부터 다시 진행한다. 둘 다 실패하면 그 카테고리는 그날 건너뛴다.
 
-```
-📰 Collect  →  🤖 Curate  →  ✍️ Caption  →  🎨 Render  →  ☁️ Upload  →  📤 Publish  →  📧 Report
-```
+## 실패 대비
 
-| Stage | Powered by | Detail |
-| --- | --- | --- |
-| 📰 **Collect** | Google News | Gathers candidates, drops excluded sources and already-published articles |
-| 🤖 **Curate** | Gemini | Picks one primary + one backup article per category |
-| ✍️ **Caption** | Gemini → Qwen | Writes a Korean caption, with a Hugging Face fallback |
-| 🎨 **Render** | FLUX + Pillow | Generates a poster image and overlays the news headline |
-| ☁️ **Upload** | Cloudflare R2 | Stores the final poster and its 9:16 story version at public URLs |
-| 📤 **Publish** | Meta Graph API | Posts to Instagram, Facebook Page, and Threads, plus Instagram and Facebook stories |
-| 📧 **Report** | SMTP + Artifacts | Emails a run summary and uploads outputs as CI artifacts |
+외부 API 하나가 막혀도 그날 게시가 통째로 빠지지 않도록 단계마다 대체 경로를 뒀다.
 
-Resilience is built in at every stage: image models, caption models, and body extractors each have a fallback chain, and a failing primary article is automatically replaced by its category backup.
-
----
-
-## ⚙️ Production setup
-
-The production runtime is **GitHub Actions** — the local machine never needs to be online.
-
-| Item | Value |
+| 단계 | 시도 순서 |
 | --- | --- |
-| Workflow | `.github/workflows/daily-upload.yml` |
-| Runtime | GitHub-hosted Ubuntu runner |
-| Schedule | `23 21 * * *` UTC → **06:23 KST** |
-| Manual run | `workflow_dispatch` (Actions tab) |
-| Python | 3.11 |
-| Publish mode | `DRY_RUN=false` |
-| Daily post limit | `MAX_DAILY_POSTS=3` |
-| Publish window | `UPLOAD_WINDOW_MINUTES=15` |
-| Post spacing | `POST_SPACING_MINUTES=5` |
-| Reporting | SMTP email + GitHub artifact |
+| 이미지 생성 | `FLUX.1-dev`(28 steps) → `FLUX.1-schnell`(4 steps, guidance 0) → `FLUX.1-schnell`(4 steps, guidance 3.5) |
+| Gemini 호출 | `gemini-3.5-flash` → `gemini-3.1-flash-lite` (429/503으로 재시도까지 실패한 경우) |
+| 캡션 | Gemini 두 모델 → `Qwen/Qwen2.5-72B-Instruct` |
+| 본문 추출 | `trafilatura` → `readability-lxml` → BeautifulSoup |
 
-**Run order:** checkout → install Python, Noto CJK fonts, and dependencies → CI quality gate (`ruff`, `mypy`, `unittest`) → write Secrets to `.env` → run `main.py`.
+실제로 쓰인 캡션·이미지 모델은 기사 데이터에 기록되고 리포트에도 찍힌다.
 
----
+## 게시 규칙
 
-## 🧩 Modules
+- 본문 추출, 캡션, 이미지 프롬프트, 이미지 생성, 헤드라인 합성, R2 업로드가 모두 끝난 기사만 게시한다.
+- 게시 전에 각 토큰으로 계정에 접근할 수 있는지 먼저 확인한다. Instagram·Facebook 확인이 실패하면 게시 자체를 하지 않고, Threads 확인만 실패하면 Threads만 건너뛴다.
+- 스토리는 같은 채널의 피드 게시가 성공했을 때만 올린다. 스토리가 실패해도 리포트에만 남기고 실행은 계속한다.
+- 하루 게시 수는 `MAX_DAILY_POSTS`로 제한한다. 날짜 기준은 KST다.
+- 이미 게시한 기사는 `history.jsonl`로 걸러낸다. 일부 채널에만 올라간 기사도 이력에 남겨서 다음 날 다시 올라가지 않게 했다.
+- 매일 같은 시각에 올라가지 않도록 첫 게시는 `UPLOAD_WINDOW_MINUTES` 안에서 랜덤하게 늦추고, 그다음부터는 `POST_SPACING_MINUTES` 간격으로 올린다.
+- 게시가 끝났는데 Instagram이나 Facebook 중 한쪽이라도 성공이 0건이면 워크플로를 실패로 끝낸다. Threads와 스토리 실패는 워크플로 실패로 치지 않는다.
 
-| File | Responsibility |
+## 실행 환경
+
+`.github/workflows/daily-upload.yml`이 매일 `23 21 * * *`(UTC), 즉 06:23 KST에 실행된다. Actions 탭에서 수동으로 돌릴 수도 있다.
+
+워크플로 순서는 체크아웃 → Python 3.11·Noto CJK 폰트·의존성 설치 → `ruff`, `mypy`, `unittest` → `main.py` 실행 → 산출물 업로드 → 이메일 발송이다. 검사 단계에서 실패하면 게시까지 가지 않는다. `ci.yml`은 `main` 푸시와 PR마다 같은 검사만 돌린다.
+
+게시 관련 환경 변수:
+
+| 변수 | 운영값 | 코드 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `DRY_RUN` | `false` | `false` | `true`면 콘텐츠만 만들고 게시는 건너뜀 |
+| `MAX_DAILY_POSTS` | `3` | `3` | 하루 최대 게시 수 |
+| `UPLOAD_WINDOW_MINUTES` | `15` | `120` | 첫 게시를 랜덤하게 늦출 최대 시간(분) |
+| `POST_SPACING_MINUTES` | `5` | `10` | 게시물 사이 간격(분) |
+| `ENABLE_STORIES` | `true` | `true` | 스토리 게시 여부 |
+
+## 파일 구조
+
+```text
+main.py                    실행 진입점, 전체 순서 제어
+config.py                  환경 변수 읽기
+constants.py               상태값 문자열
+models.py                  Article 데이터 클래스
+time_utils.py              KST 날짜·시간 처리
+news.py                    Google News 수집, 원문 URL 변환, 본문 추출
+content.py                 Gemini 기사 선정, 캡션·이미지 프롬프트 생성, Qwen 대체
+image_generation.py        Hugging Face 이미지 생성
+image_rendering.py         헤드라인 합성, 스토리 이미지 렌더링
+storage.py                 R2 업로드, 게시 이력 동기화
+pipeline.py                콘텐츠 생성 흐름, 완성 여부 확인, 예비 기사 재시도
+publishing.py              게시 전 확인, 일일 한도, 중복 방지, 게시 간격
+instagram_publishing.py    Instagram 피드·스토리 게시
+facebook_publishing.py     Facebook 페이지 피드·스토리 게시
+threads_publishing.py      Threads 게시
+outputs.py                 실행 산출물 저장
+reporting.py               실행 요약·실패 리포트 생성
+history.py                 게시 이력 기록, 중복 게시 확인
+tests/                     단위 테스트
+```
+
+## 데이터 모델
+
+기사 한 건의 처리 상태는 `models.Article` 하나로 관리한다. 단계마다 결과값, `*_status`, 에러를 필드로 남겨서 어느 단계에서 실패했는지 리포트에서 바로 보이게 했다. `from_dict()` / `to_dict()`로 기존 산출물과 호환되고, 정의되지 않은 필드는 `extra_fields`에 그대로 보존한다.
+
+<details>
+<summary>필드 목록</summary>
+
+| 단계 | 필드 |
 | --- | --- |
-| `main.py` | Batch entry point |
-| `models.py` | `Article` dataclass and dict compatibility helpers |
-| `constants.py` | Centralized status strings |
-| `time_utils.py` | KST-based date and time helpers |
-| `config.py` | Environment-based runtime settings |
-| `news.py` | Google News collection, URL resolution, body extraction |
-| `content.py` | Gemini selection, primary/fallback Gemini text generation, Qwen caption fallback, image prompts |
-| `image_generation.py` | Hugging Face image generation with model fallback |
-| `image_rendering.py` | News poster overlay rendering |
-| `storage.py` | Cloudflare R2 upload |
-| `pipeline.py` | Content pipeline orchestration, completion checks, backup retry |
-| `publishing.py` | Publish orchestration, preflight, daily limits, duplicate prevention |
-| `instagram_publishing.py` | Instagram media container polling and publish |
-| `facebook_publishing.py` | Facebook Page photo publish |
-| `threads_publishing.py` | Threads media container polling and publish |
-| `outputs.py` | Runtime output files |
-| `reporting.py` | Run summary and failure report generation |
-| `history.py` | Publish history and duplicate prevention |
-| `tests/` | Unit tests for core model, pipeline, and rendering behavior |
-
----
-
-## 🗂️ Data model
-
-Article data is represented by `models.Article`.
-
-<details>
-<summary><b>Article fields</b></summary>
-
-```text
-id                          resolved_link               instagram_caption_model
-category                    body                        sdxl_image_prompt
-title                       instagram_caption           image_path
-source                      final_image_path            public_image_url
-google_link                 publish_status              instagram_publish_status
-backup_article              facebook_publish_status     threads_publish_status
-```
+| 기사 정보 | `id`, `category`, `title`, `source`, `google_link`, `resolved_link`, `body`, `status` |
+| 선정 | `selection_rank`, `backup_article` |
+| 캡션 | `instagram_caption`, `instagram_caption_raw`, `instagram_caption_status`, `instagram_caption_model` |
+| 이미지 프롬프트 | `sdxl_image_prompt`, `sdxl_image_prompt_raw`, `sdxl_image_prompt_status` |
+| 이미지 | `image_path`, `image_generation_status`, `image_generation_model`, `image_generation_error`, `final_image_path`, `image_overlay_status` |
+| 업로드 | `public_image_url`, `r2_upload_status`, `story_image_path`, `public_story_image_url` |
+| 피드 게시 | `instagram_publish_*`, `facebook_publish_*`, `threads_publish_*` (`_status`, `_post_id`, `_error`), `publish_status` |
+| 스토리 게시 | `instagram_story_*`, `facebook_story_*` (`_status`, `_id`, `_error`) |
 
 </details>
 
-`Article.from_dict()` and `Article.to_dict()` keep compatibility with existing outputs and external inputs. Unknown fields are preserved in `extra_fields`, so schema changes never silently drop data.
+## 산출물과 게시 이력
 
----
+실행 결과는 `outputs/YYYY-MM-DD/`(KST)에 쌓인다.
 
-## 🔁 Fallback strategies
+- `run_report.txt` — 채널별 게시 수, 게시한 기사 제목, 사용한 모델, 게시물 ID
+- `failure_report.txt` — 카테고리·기사·게시 단계별 실패 내역
+- 그 밖에 Gemini 선정 결과, 캡션, 이미지 프롬프트, 생성 이미지 목록 등
 
-Any single provider outage should not fail the whole run, so each generation step tries models in priority order.
+두 리포트는 이메일 본문으로 오고, `outputs/**/*.txt`는 메일 첨부와 Actions 아티팩트로 남는다.
 
-**Image generation** (Hugging Face Inference API):
+Actions 러너는 매번 새 환경에서 뜨기 때문에 로컬 `history.jsonl`이 다음 실행까지 남지 않는다. 그래서 실행을 시작할 때 R2 비공개 경로(`private/history/YYYY-MM-DD/history.jsonl`)에서 최근 3일치 이력을 받아오고, 끝나면 그날 이력을 다시 올린다. 3일이 지난 이력은 지운다. `history.jsonl`에는 게시물 ID와 URL이 들어 있어서 Git에는 올리지 않는다.
 
-```text
-1. black-forest-labs/FLUX.1-dev       · 28 steps · guidance 3.5
-2. black-forest-labs/FLUX.1-schnell   ·  4 steps · guidance 0
-3. black-forest-labs/FLUX.1-schnell   ·  4 steps · guidance 3.5
-```
+## 개발하면서 겪은 문제
 
-**Text generation** — Gemini selects article IDs, writes Korean captions, and generates SDXL image prompts. Every Gemini call uses a primary model, then retries once with the fallback model on retry-exhausted `429` or `503` errors. The caption model actually used is stored in `instagram_caption_model` and reported.
+- **pygooglenews import 실패** — 의존하는 feedparser 5.x가 최신 Python에서 제거된 `base64.decodestring`을 참조한다. import 전에 `base64.decodebytes`로 별칭을 만들어 해결했다. feedparser 5.x는 설치할 때도 `setuptools<58`이 필요하다.
+- **googlenewsdecoder 업데이트 후 URL 변환 실패** — 0.2.0부터 성공 여부 키가 `status`에서 `success`로 바뀌었다. 버전을 0.1.7로 고정하고, 코드에서는 두 키를 모두 확인하게 했다.
+- **selectolax 1.0 업데이트 후 import 실패** — googlenewsdecoder가 쓰는 Modest 백엔드가 selectolax 1.0에서 빠졌다. `selectolax<1.0`으로 고정했다.
+- 위처럼 버전을 고정하지 않은 설치에서 새 릴리스 때문에 파이프라인이 깨진 적이 있어서, 지금은 하위 의존성까지 고정한 `requirements.lock.txt`로 설치한다.
+- **일부 언론사 본문 수집 차단** — 기본 Python 요청을 막는 곳이 있어 브라우저와 비슷한 요청 헤더를 붙이고 본문 추출기를 3단계로 뒀다. 그래도 401/402/403을 돌려주는 곳이 있고, 본문을 끝내 못 가져오면 그 기사는 예비 기사로 교체된다.
+- **Actions 로그 순서 꼬임** — stdout 버퍼링 때문에 트레이스백과 진행 로그 순서가 섞여서 원인을 찾기 어려웠다. 워크플로에 `PYTHONUNBUFFERED=1`을 설정했다.
 
-```text
-1. gemini-3.5-flash
-2. gemini-3.1-flash-lite
-```
+## 로컬에서 실행하기
 
-Korean caption generation additionally falls back to Hugging Face Qwen if both Gemini models fail:
-
-```text
-3. Qwen/Qwen2.5-72B-Instruct
-```
-
-**Body extraction:** `trafilatura` → `readability-lxml` → BeautifulSoup.
-
-If all image models fail, the article gets `generation_failed` status and the pipeline moves to the category backup article.
-
----
-
-## ✅ Publish eligibility
-
-An article is published only when **all** of these succeed:
-
-- ✔️ Body extraction
-- ✔️ Caption generation
-- ✔️ Image prompt generation
-- ✔️ Hugging Face image generation
-- ✔️ Poster rendering
-- ✔️ R2 upload
-- ✔️ `final_image_path` exists
-- ✔️ `public_image_url` exists
-
-If the primary article fails, the backup is processed. If both fail, the category is written to `failed_categories.txt`.
-
----
-
-## 📤 Meta publishing
-
-`publishing.py` runs a preflight check before sending any publish request.
-
-**Required preflight** (blocks Instagram + Facebook if it fails):
-
-- `META_ACCESS_TOKEN` can access `IG_USER_ID`
-- `FACEBOOK_PAGE_ACCESS_TOKEN` can access `FACEBOOK_PAGE_ID`
-
-**Threads preflight** — treated as an auxiliary channel:
-
-- `THREADS_ACCESS_TOKEN` can access `THREADS_USER_ID`
-- If it fails, Instagram and Facebook still publish; the Threads error is written to the article status and email report.
-
-**Stories** — also treated as auxiliary channels (`ENABLE_STORIES=true` by default):
-
-- Each poster is re-rendered as a 1080×1920 JPEG (blurred background, poster centered) and uploaded to R2 alongside the feed image.
-- An Instagram story (`media_type=STORIES`) and a Facebook Page story (`/photo_stories`) are posted only after that channel's feed post succeeds.
-- Story failures are recorded in the article status and email report but never fail the run. The existing tokens are reused; Facebook stories need `pages_manage_posts` on the Page token.
-
-> **Tip:** For long-term operation, use a Meta Business System User token with the required Page and Instagram assets assigned. Instagram and Facebook credentials are split intentionally so each channel can be rotated or debugged independently. Threads uses a separate long-lived token that should be refreshed before expiration.
-
----
-
-## 📦 Runtime outputs
-
-Every run writes outputs under a KST date folder: `outputs/YYYY-MM-DD/`.
-
-```text
-gemini_selected_result.txt    instagram_captions.txt      run_report.txt
-selected_news.txt             sdxl_image_prompts.txt      failed_categories.txt
-selected_articles.txt         generated_images.txt        failure_report.txt   images/
-```
-
-- **`run_report.txt`** — channel upload counts, uploaded titles, caption/image model names, and channel post IDs.
-- **`failure_report.txt`** — category, article, and publishing failures.
-- Both reports are included in the email body; all `outputs/**/*.txt` files are attached to the email and uploaded as GitHub Actions artifacts.
-
-**Publish history** is appended locally to `history.jsonl` (URLs, social post IDs, public image URLs). It is Git-ignored and must not be committed to a public repo. At the start of each run, recent history is downloaded from a private R2 key so duplicate prevention and daily-limit counting work across runs. Remote history lives separately from public posters at `private/history/YYYY-MM-DD/history.jsonl`, with a 3-day retention window matching local outputs.
-
----
-
-## 🔐 Required GitHub Secrets
-
-Add these under `Settings → Secrets and variables → Actions`.
-
-<details>
-<summary><b>Gemini / Hugging Face</b></summary>
-
-```text
-GEMINI_API_KEY
-HF_TOKEN
-```
-
-</details>
-
-<details>
-<summary><b>Cloudflare R2</b></summary>
-
-```text
-R2_ACCOUNT_ID
-R2_ACCESS_KEY_ID
-R2_SECRET_ACCESS_KEY
-R2_BUCKET_NAME
-R2_PUBLIC_BASE_URL
-```
-
-</details>
-
-<details>
-<summary><b>Meta / Instagram / Facebook</b></summary>
-
-```text
-META_ACCESS_TOKEN              = Meta Business System User token
-IG_USER_ID                     = Instagram Business Account ID
-FACEBOOK_PAGE_ID               = Facebook Page ID
-FACEBOOK_PAGE_ACCESS_TOKEN     = Page access token from /me/accounts
-```
-
-The System User must have access to the Facebook Page, Instagram Business Account, and Meta app. Required permissions typically include `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `pages_manage_metadata`, `instagram_basic`, and `instagram_content_publish`.
-
-</details>
-
-<details>
-<summary><b>Threads</b></summary>
-
-```text
-THREADS_ACCESS_TOKEN     = long-lived Threads token for the target profile
-THREADS_USER_ID          = Threads profile ID from the Threads Graph API
-```
-
-</details>
-
-<details>
-<summary><b>Email report (Gmail SMTP example)</b></summary>
-
-```text
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USERNAME=<sender-gmail-address>
-SMTP_PASSWORD=<gmail-app-password>
-REPORT_EMAIL_TO=<recipient-email-address>
-```
-
-</details>
-
----
-
-## 💻 Local development
+CI와 같은 방식으로 설치한다. feedparser 5.x 때문에 setuptools를 먼저 낮춰야 한다.
 
 ```bash
-# 1. Create a virtual environment and install production deps
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
 
-# 2. Install dev deps (lint, type check, tests)
-pip install -r requirements-dev.txt
+pip install --upgrade pip
+pip install "setuptools<58" wheel
+pip install --no-build-isolation -r requirements.lock.txt
+pip install -r requirements-dev.lock.txt
 ```
 
-Create a local `.env` for local execution:
-
-```env
-GEMINI_API_KEY=
-HF_TOKEN=
-
-R2_ACCOUNT_ID=
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-R2_BUCKET_NAME=
-R2_PUBLIC_BASE_URL=
-
-META_ACCESS_TOKEN=
-IG_USER_ID=
-FACEBOOK_PAGE_ID=
-FACEBOOK_PAGE_ACCESS_TOKEN=
-
-THREADS_ACCESS_TOKEN=
-THREADS_USER_ID=
-
-MAX_DAILY_POSTS=3
-UPLOAD_WINDOW_MINUTES=15
-POST_SPACING_MINUTES=5
-ENABLE_STORIES=true
-```
-
-> Production values are managed through GitHub Actions Secrets. If local `.env` values differ, local publish verification is not authoritative.
-
----
-
-## 🧪 Quality checks
+환경 변수 파일을 만들고 키를 채운다. 항목은 아래 Secrets 목록과 같다.
 
 ```bash
-# Full local check
+cp .env.example .env
+```
+
+로컬에서는 `.env`에 `DRY_RUN=true`를 꼭 넣는다. 기본값이 `false`라서 빠뜨리면 실제 계정에 게시된다.
+
+```bash
+python main.py
+```
+
+운영 값은 GitHub Secrets에 따로 있으므로, 로컬 `.env`가 다르면 로컬 결과를 운영 기준으로 볼 수 없다.
+
+## 테스트와 정적 검사
+
+```bash
 python3 -m ruff check .
 python3 -m mypy .
 python3 -m unittest discover -s tests
 ```
 
-<details>
-<summary><b>Syntax-only compile check</b></summary>
+## GitHub Secrets
 
-```bash
-python3 -m py_compile main.py models.py constants.py reporting.py pipeline.py \
-  image_generation.py content.py news.py image_rendering.py storage.py outputs.py \
-  publishing.py history.py config.py time_utils.py instagram_publishing.py \
-  facebook_publishing.py threads_publishing.py
-```
-
-</details>
-
----
-
-## 🛠️ Operations notes
-
-- Runs on GitHub-hosted runners — your laptop does not need to be online.
-- Output folders, poster dates, and daily post limits all use **KST**.
-- With `DRY_RUN=false`, a manual dispatch publishes **real** Instagram, Facebook, and Threads posts.
-- Publish timing is controlled by `UPLOAD_WINDOW_MINUTES` and `POST_SPACING_MINUTES`.
-- Some publishers return `401`, `402`, or `403` during article body download — this is expected and handled by the extractor fallback chain.
-- If Meta returns `OAuthException`, `code 190`, or `Session has expired`, check the System User token, Threads token, asset assignments, and GitHub Secrets first.
-
----
-
-## 🔒 Security
-
-Never commit these files (both are Git-ignored):
+`Settings → Secrets and variables → Actions`에 등록한다.
 
 ```text
-.env             # credentials
-history.jsonl    # runtime history with URLs and post IDs
+# Gemini / Hugging Face
+GEMINI_API_KEY
+HF_TOKEN
+
+# Cloudflare R2
+R2_ACCOUNT_ID
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+R2_BUCKET_NAME
+R2_PUBLIC_BASE_URL
+
+# Instagram / Facebook
+META_ACCESS_TOKEN              Meta 비즈니스 시스템 사용자 토큰
+IG_USER_ID                     Instagram 비즈니스 계정 ID
+FACEBOOK_PAGE_ID               Facebook 페이지 ID
+FACEBOOK_PAGE_ACCESS_TOKEN     /me/accounts에서 받은 페이지 토큰
+
+# Threads
+THREADS_ACCESS_TOKEN           Threads 장기 토큰
+THREADS_USER_ID                Threads 프로필 ID
+
+# 이메일 리포트 (Gmail 기준)
+SMTP_HOST                      smtp.gmail.com
+SMTP_PORT                      587
+SMTP_USERNAME                  발신 Gmail 주소
+SMTP_PASSWORD                  Gmail 앱 비밀번호
+REPORT_EMAIL_TO                받는 주소
 ```
 
-This project uses official APIs only: **Google Gemini**, **Hugging Face Inference**, **Cloudflare R2 (S3-compatible)**, **Meta Graph**, **Threads Graph**, and **SMTP**.
+Meta 시스템 사용자에는 Facebook 페이지, Instagram 비즈니스 계정, Meta 앱 접근 권한을 할당해야 한다. 권한은 `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `pages_manage_metadata`, `instagram_basic`, `instagram_content_publish`를 쓴다. Facebook 페이지 게시와 스토리에는 IG 토큰이 아니라 `pages_manage_posts` 권한이 있는 페이지 토큰이 필요하다.
 
-Operators are responsible for complying with publisher policies, provider terms, Meta Platform policies, and copyright requirements.
+Instagram과 Facebook 토큰은 채널별로 따로 교체하고 디버깅할 수 있게 분리해 뒀다. Threads 토큰은 만료 기간이 있어서 그 전에 갱신해야 한다.
+
+## 운영 메모
+
+- 출력 폴더, 포스터 날짜, 일일 게시 한도는 모두 KST 기준이다.
+- Actions에서 수동 실행해도 `DRY_RUN=false`라서 실제로 게시된다.
+- Meta에서 `OAuthException`, `code 190`, `Session has expired`가 나오면 토큰 문제다. 시스템 사용자 토큰, Threads 토큰, 자산 할당, Secrets 순서로 확인한다.
+- `.env`와 `history.jsonl`은 `.gitignore`에 등록돼 있다. 커밋하지 않는다.
+- Google Gemini, Hugging Face Inference, Cloudflare R2(S3 호환), Meta Graph, Threads Graph, SMTP 등 공식 API만 사용한다. 언론사 정책, 각 서비스 약관, Meta 플랫폼 정책, 저작권은 운영하는 쪽에서 지켜야 한다.

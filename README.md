@@ -13,7 +13,10 @@
 
 ## 동작 과정
 
-![콘텐츠 파이프라인](docs/images/pipeline.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/pipeline-dark.png">
+  <img alt="콘텐츠 파이프라인" src="docs/images/pipeline.png">
+</picture>
 
 1. **뉴스 수집** — Google News에서 종합(KR), 경제(KR), 경제(US) 세 카테고리의 헤드라인을 카테고리당 최대 10개씩 가져온다. 제외 언론사(`news.py`의 `EXCLUDED_SOURCE_KEYWORDS`)와 이미 게시한 기사는 여기서 뺀다.
 2. **기사 선정** — Gemini가 카테고리마다 메인 기사 1개와 예비 기사 1개를 고른다.
@@ -53,7 +56,10 @@
 
 `.github/workflows/daily-upload.yml`이 매일 `23 21 * * *`(UTC), 즉 06:23 KST에 실행된다. Actions 탭에서 수동으로 돌릴 수도 있다.
 
-![실행 구조](docs/images/architecture.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.png">
+  <img alt="실행 구조" src="docs/images/architecture.png">
+</picture>
 
 워크플로 순서는 체크아웃 → Python 3.11·Noto CJK 폰트·의존성 설치 → `ruff`, `mypy`, `unittest` → `main.py` 실행 → 산출물 업로드 → 이메일 발송이다. 검사 단계에서 실패하면 게시까지 가지 않는다. `ci.yml`은 `main` 푸시와 PR마다 같은 검사만 돌린다.
 
